@@ -1,0 +1,57 @@
+AutoLink-RadioSense/
+│
+├── platformio.ini
+├── README.md
+│
+├── include/
+│   ├── Config.h
+│   └── SystemConfig.h
+│
+├── src/
+│   └── main.cpp
+│
+├── lib/
+│
+│   ├── System/
+│   │   ├── System.cpp
+│   │   └── System.h
+│   │
+│   ├── LoRaCommunication/
+│   │   ├── LoRaCommunication.cpp
+│   │   └── LoRaCommunication.h
+│   │
+│   ├── BeaconManagement/
+│   │   ├── BeaconManagement.cpp
+│   │   └── BeaconManagement.h
+│   │
+│   ├── NeighborManagement/
+│   │   ├── NeighborManagement.cpp
+│   │   └── NeighborManagement.h
+│   │
+│   ├── GPS/
+│   │   ├── GPS.cpp
+│   │   └── GPS.h
+│   │
+│   ├── Routing/
+│   │   ├── Routing.cpp
+│   │   └── Routing.h
+│   │
+│   ├── RelaySelection/
+│   │   ├── RelaySelection.cpp
+│   │   └── RelaySelection.h
+│   │
+│   └── HazardManagement/
+│       ├── HazardManagement.cpp
+│       └── HazardManagement.h
+│
+├── test/
+│   │
+│   ├── test_beacon/
+│   ├── test_lora/
+│   ├── test_routing/
+│   └── ...
+│
+└── docs/
+    ├── architecture/
+    ├── protocol/
+    └── testing/
