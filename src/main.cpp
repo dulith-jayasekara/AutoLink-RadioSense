@@ -1,12 +1,13 @@
-#include "Core/LoRa_Manager.h"
-#include <Arduino.h>
+#include "Project_Headers.h"
+#include "Library_Headers.h"
+#include "Config.h"
 
 // put your setup code here, to run once:
 void setup()
 {
     // Start Serial Monitor
-    Serial.begin(115200);
-    delay(10000);
+    Serial.begin(SERIAL_BAUD_RATE);
+    delay(START_DELAY);
 
     // Initialize LoRa module
     LoRa_Initialization();
