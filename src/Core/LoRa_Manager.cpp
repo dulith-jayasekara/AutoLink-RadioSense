@@ -1,10 +1,8 @@
-#include <Arduino.h>
-#include <SPI.h>
-#include <LoRa.h>
+#include "Project_Headers.h"
+#include "Library_Headers.h"
 
-#include "LoRa_Manager.h"
-
-void LoRa_Initialization(){
+void LoRa_Initialization()
+{
     int attempts = 0;
 
     Serial.println();

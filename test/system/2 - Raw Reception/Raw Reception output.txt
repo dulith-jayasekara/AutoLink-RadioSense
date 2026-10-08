@@ -1,0 +1,125 @@
+========================================
+ AutoLink RadioSense
+ System Test 02 - Raw Reception
+========================================
+
+========================================
+         LoRa Initialization
+========================================
+Initializing SPI...
+Initializing LoRa radio...
+
+LoRa transciever initialized successfully!
+   Frequency: 433.00 MHz
+   Spreading Factor: 7
+   Bandwidth: 125.00 kHz
+   Coding Rate: 4/5
+   Sync Word: 0x12
+   Transmit Power: 17 dBm
+   Preamble Length: 8
+   CRC: Enabled
+========================================
+LoRa receiver started.
+Collecting 10 packets before analysis.
+Waiting for raw packets...
+
+----------------------------------------
+PACKET 1 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 6210 ms
+RSSI           : -82 dBm
+SNR            : 8.25 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 2 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 7210 ms
+RSSI           : -81 dBm
+SNR            : 8.50 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 3 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 8210 ms
+RSSI           : -83 dBm
+SNR            : 8.00 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 4 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 9210 ms
+RSSI           : -82 dBm
+SNR            : 8.25 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 5 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 10210 ms
+RSSI           : -80 dBm
+SNR            : 9.00 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 6 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 11210 ms
+RSSI           : -84 dBm
+SNR            : 7.75 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 7 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 12210 ms
+RSSI           : -82 dBm
+SNR            : 8.25 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 8 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 13210 ms
+RSSI           : -81 dBm
+SNR            : 8.50 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 9 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 14210 ms
+RSSI           : -83 dBm
+SNR            : 8.00 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 10 OF 10
+Payload        : Hello from AutoLink RadioSense!
+Packet size    : 31 bytes
+Reception time : 15210 ms
+RSSI           : -82 dBm
+SNR            : 8.25 dB
+----------------------------------------
+
+============== STATISTICS ==============
+Total packets received       : 10
+Average RSSI                 : -82.00 dBm
+RSSI variation               : 1.10 dB
+Average SNR                  : 8.28 dB
+SNR variation                : 0.33 dB
+Average inter-packet interval: 1000.00 ms
+Throughput                   : 272.53 bit/s
+========================================
+Packet collection complete; LoRa radio is asleep.

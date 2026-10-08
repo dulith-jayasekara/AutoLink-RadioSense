@@ -1,0 +1,21 @@
+========================================
+ AutoLink RadioSense
+ System Test 01 - Raw Transmission
+========================================
+
+Initializing LoRa...
+
+LoRa initialization completed.
+Starting raw packet transmission...
+
+----------------------------------------
+Packet #1
+Payload: Hello from AutoLink RadioSense!
+Transmitting...
+Packet transmitted successfully.
+
+----------------------------------------
+Packet #2
+Payload: Hello from AutoLink RadioSense!
+Transmitting...
+Packet transmitted successfully.
