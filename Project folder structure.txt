@@ -1,57 +1,90 @@
-AutoLink-RadioSense/
+AutoLink RadioSense/
 │
-├── platformio.ini
-├── README.md
+├── docs/
+│   ├── DOCX/
+│   │   ├── LoRa Link Quality and Packet Quality Measurement Documentation.docx
+│   │   └── Project-Wide Headers and Include Path Best Practices.docx
+│   ├── TXT/
+│   │   ├── LoRa Link Quality and Packet Quality Measurement Documentation
+│   │   └── Project-Wide Headers and Include Path Best Practices
+│   └── README
 │
 ├── include/
 │   ├── Config.h
-│   └── SystemConfig.h
-│
-├── src/
-│   └── main.cpp
+│   ├── Library_Headers.h
+│   ├── Project_Headers.h
+│   └── README
 │
 ├── lib/
+│   ├── LoRa/
+│   │   ├── examples/
+│   │   │   ├── LoRaCADCallback/
+│   │   │   │   └── LoRaCADCallback.ino
+│   │   │   ├── LoRaDumpRegisters/
+│   │   │   │   └── LoRaDumpRegisters.ino
+│   │   │   ├── LoRaDuplex/
+│   │   │   │   └── LoRaDuplex.ino
+│   │   │   ├── LoRaDuplexCallback/
+│   │   │   │   └── LoRaDuplexCallback.ino
+│   │   │   ├── LoRaReceiver/
+│   │   │   │   └── LoRaReceiver.ino
+│   │   │   ├── LoRaReceiverCallback/
+│   │   │   │   └── LoRaReceiverCallback.ino
+│   │   │   ├── LoRaSender/
+│   │   │   │   └── LoRaSender.ino
+│   │   │   ├── LoRaSenderNonBlocking/
+│   │   │   │   └── LoRaSenderNonBlocking.ino
+│   │   │   ├── LoRaSenderNonBlockingCallback/
+│   │   │   │   └── LoRaSenderNonBlockingCallback.ino
+│   │   │   ├── LoRaSetSpread/
+│   │   │   │   └── LoRaSetSpread.ino
+│   │   │   ├── LoRaSetSyncWord/
+│   │   │   │   └── LoRaSetSyncWord.ino
+│   │   │   ├── LoRaSimpleGateway/
+│   │   │   │   └── LoRaSimpleGateway.ino
+│   │   │   └── LoRaSimpleNode/
+│   │   │       └── LoRaSimpleNode.ino
+│   │   ├── src/
+│   │   │   ├── LoRa.cpp
+│   │   │   └── LoRa.h
+│   │   ├── API.md
+│   │   ├── issue_template.md
+│   │   ├── keywords.txt
+│   │   ├── library.properties
+│   │   ├── LICENSE
+│   │   └── README.md
+│   └── README
 │
-│   ├── System/
-│   │   ├── System.cpp
-│   │   └── System.h
-│   │
-│   ├── LoRaCommunication/
-│   │   ├── LoRaCommunication.cpp
-│   │   └── LoRaCommunication.h
-│   │
-│   ├── BeaconManagement/
-│   │   ├── BeaconManagement.cpp
-│   │   └── BeaconManagement.h
-│   │
-│   ├── NeighborManagement/
-│   │   ├── NeighborManagement.cpp
-│   │   └── NeighborManagement.h
-│   │
-│   ├── GPS/
-│   │   ├── GPS.cpp
-│   │   └── GPS.h
-│   │
-│   ├── Routing/
-│   │   ├── Routing.cpp
-│   │   └── Routing.h
-│   │
-│   ├── RelaySelection/
-│   │   ├── RelaySelection.cpp
-│   │   └── RelaySelection.h
-│   │
-│   └── HazardManagement/
-│       ├── HazardManagement.cpp
-│       └── HazardManagement.h
+├── src/
+│   ├── Core/
+│   │   ├── LoRa_Manager.cpp
+│   │   └── LoRa_Manager.h
+│   ├── Hazard Memory Network/
+│   ├── Multihop Routing & Relay/
+│   ├── Route Aware Hazards Filtering/
+│   │   └── Hazard Memory Network/
+│   │       └── Store Carry Forward/
+│   ├── Store Carry Forward/
+│   ├── main.cpp
+│   └── README
 │
 ├── test/
-│   │
-│   ├── test_beacon/
-│   ├── test_lora/
-│   ├── test_routing/
-│   └── ...
+│   ├── system/
+│   │   ├── 1 - Raw Transmission/
+│   │   │   ├── Raw Transmission output.txt
+│   │   │   └── Raw_Transmission.cpp
+│   │   ├── 2 - Raw Reception/
+│   │   │   ├── Raw Reception output.txt
+│   │   │   └── Raw_Reception.cpp
+│   │   ├── 3 - Raw Transmission & Reception/
+│   │   │   ├── Raw_Transmission_Reception.cpp
+│   │   │   ├── Reciever output.txt
+│   │   │   └── Transmitter output.txt
+│   │   └── README
+│   ├── unit/
+│   │   └── README
+│   └── README
 │
-└── docs/
-    ├── architecture/
-    ├── protocol/
-    └── testing/
+├── platformio.ini
+├── README.md
+└── Project folder structure.txt
