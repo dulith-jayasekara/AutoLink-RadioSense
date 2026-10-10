@@ -2,6 +2,8 @@
 #include "Library_Headers.h"
 #include "Config.h"
 
+#define PACKET_INTERVAL 5000
+
 // --------------------------------------------------
 // Raw LoRa Transmission System Test
 // AutoLink RadioSense
@@ -10,7 +12,8 @@
 const char* TEST_MESSAGE = "Hello from AutoLink RadioSense!";
 unsigned long packetNumber = 0;
 
-void setup(){
+void setup()
+{
     Serial.begin(SERIAL_BAUD_RATE);
     delay(START_DELAY);
 
@@ -63,5 +66,5 @@ void loop()
     Serial.println();
 
     // Wait before sending next packet
-    delay(5000);
+    delay(PACKET_INTERVAL);
 }

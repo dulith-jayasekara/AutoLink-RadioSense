@@ -62,8 +62,6 @@ AutoLink RadioSense/
 │   ├── Hazard Memory Network/
 │   ├── Multihop Routing & Relay/
 │   ├── Route Aware Hazards Filtering/
-│   │   └── Hazard Memory Network/
-│   │       └── Store Carry Forward/
 │   ├── Store Carry Forward/
 │   ├── main.cpp
 │   └── README
