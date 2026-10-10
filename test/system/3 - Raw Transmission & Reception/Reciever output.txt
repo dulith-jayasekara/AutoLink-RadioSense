@@ -1,0 +1,15 @@
+Node Role: RECEIVER
+
+Waiting for packets...
+
+Packet received!
+Packet size: 13 bytes
+Payload: TEST_PACKET_1
+RSSI: -84 dBm
+SNR : 7.75 dB
+
+Packet received!
+Packet size: 13 bytes
+Payload: TEST_PACKET_2
+RSSI: -85 dBm
+SNR : 7.50 dB

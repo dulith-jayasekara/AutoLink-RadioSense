@@ -1,18 +1,20 @@
-#include <Arduino.h>
+#include "Project_Headers.h"
+#include "Library_Headers.h"
+#include "Config.h"
 
-// put function declarations here:
-int myFunction(int, int);
+// put your setup code here, to run once:
+void setup()
+{
+    // Start Serial Monitor
+    Serial.begin(SERIAL_BAUD_RATE);
+    delay(START_DELAY);
 
-void setup() {
-  // put your setup code here, to run once:
-  int result = myFunction(2, 3);
+    // Initialize LoRa module
+    LoRa_Initialization();
 }
+
 
 void loop() {
   // put your main code here, to run repeatedly:
 }
 
-// put function definitions here:
-int myFunction(int x, int y) {
-  return x + y;
-}
