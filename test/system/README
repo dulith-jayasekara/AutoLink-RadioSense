@@ -27,28 +27,36 @@ Typical system-level tests may include:
 System-level tests are organized according to the system functionality being evaluated.
 
 test/
-│
 ├── unit/
-|
+│   └── ...                         # Isolated functions/classes; no complete radio link required
 └── system/
-    │
-    ├── 01_Raw_Transmission/
-    ├── 02_Raw_Reception/
-    ├── 03_TX_RX_Communication/
-    ├── 04_Packet_Loss_Test/
-    ├── 05_Range_Test/
-    ├── 06_Repeated_Transmission/
-    ├── 07_Bidirectional_Communication/
-    ├── 08_RSSI_SNR_Test/
-    ├── 09_Packet_Delivery_Test/
-    ├── 10_Communication_Stability/
-    │
-    ├── 11_Beacon_Transmission/
-    ├── 12_Beacon_Reception/
-    ├── 13_Beacon_Information_Extraction/
-    ├── 14_Beacon_Exchange/
-    │
-    └── README.md
+    ├── 01_LoRa_Initialization/     
+    ├── 02_Raw_Transmission/        
+    ├── 03_Raw_Reception/           
+    ├── 04_Repeated_Raw_Transmission/
+    ├── 05_Raw_Payload_Length/
+    ├── 06_Transmission_Interval/
+    ├── 07_Long_Duration_Operation/
+    ├── 08_Payload_Integrity/
+    ├── 09_Distance_PDR/
+    ├── 10_Spreading_Factor_Comparison/
+    ├── 11_Bandwidth_Comparison/
+    ├── 12_Coding_Rate_Comparison/
+    ├── 13_Transmit_Power_Comparison/
+    ├── 14_Antenna_Orientation_Placement/
+    ├── 15_Bidirectional_Communication/
+    ├── 16_LOS_Baseline/
+    ├── 17_Urban_Built_Up/
+    ├── 18_Rural_Vegetation/
+    ├── 19_Obstruction_Comparison/
+    ├── 20_Static_vs_Moving/
+    ├── 21_Channel_Occupancy_Interference/
+    ├── 22_Final_Packet_TX_RX/
+    ├── 23_Final_Packet_Field_Encoding/
+    ├── 24_Final_Packet_Integrity/
+    ├── 25_Final_Packet_Boundary_Handling/
+    ├── 26_Sustained_Final_Packet/
+    └── 27_Raw_vs_Final_Performance/
 
 Additional test categories may be added as the system develops.
 

@@ -1,15 +1,126 @@
-Node Role: RECEIVER
 
+========================================
+ AutoLink RadioSense
+ System Test 03 - Transmission & Reception
+========================================
+
+========================================
+         LoRa Initialization
+========================================
+Initializing SPI...
+Initializing LoRa radio...
+
+LoRa transciever initialized successfully!
+   Frequency: 433.00 MHz
+   Spreading Factor: 7
+   Bandwidth: 125.00 kHz
+   Coding Rate: 4/5
+   Sync Word: 0x12
+   Transmit Power: 17 dBm
+   Preamble Length: 8
+   CRC: Enabled
+========================================
+Node Role: RECEIVER
+Collecting 10 packets before analysis.
 Waiting for packets...
 
-Packet received!
-Packet size: 13 bytes
-Payload: TEST_PACKET_1
-RSSI: -84 dBm
-SNR : 7.75 dB
+----------------------------------------
+PACKET 1 OF 10
+Payload        : TEST_PACKET_1
+Packet size    : 13 bytes
+Reception time : 2000 ms
+RSSI           : -84 dBm
+SNR            : 7.75 dB
+----------------------------------------
 
-Packet received!
-Packet size: 13 bytes
-Payload: TEST_PACKET_2
-RSSI: -85 dBm
-SNR : 7.50 dB
+----------------------------------------
+PACKET 2 OF 10
+Payload        : TEST_PACKET_2
+Packet size    : 13 bytes
+Reception time : 7000 ms
+RSSI           : -85 dBm
+SNR            : 7.50 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 3 OF 10
+Payload        : TEST_PACKET_3
+Packet size    : 13 bytes
+Reception time : 12000 ms
+RSSI           : -83 dBm
+SNR            : 8.00 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 4 OF 10
+Payload        : TEST_PACKET_4
+Packet size    : 13 bytes
+Reception time : 17000 ms
+RSSI           : -84 dBm
+SNR            : 7.75 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 5 OF 10
+Payload        : TEST_PACKET_5
+Packet size    : 13 bytes
+Reception time : 22000 ms
+RSSI           : -82 dBm
+SNR            : 8.50 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 6 OF 10
+Payload        : TEST_PACKET_6
+Packet size    : 13 bytes
+Reception time : 27000 ms
+RSSI           : -86 dBm
+SNR            : 7.00 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 7 OF 10
+Payload        : TEST_PACKET_7
+Packet size    : 13 bytes
+Reception time : 32000 ms
+RSSI           : -84 dBm
+SNR            : 7.75 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 8 OF 10
+Payload        : TEST_PACKET_8
+Packet size    : 13 bytes
+Reception time : 37000 ms
+RSSI           : -85 dBm
+SNR            : 7.50 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 9 OF 10
+Payload        : TEST_PACKET_9
+Packet size    : 13 bytes
+Reception time : 42000 ms
+RSSI           : -83 dBm
+SNR            : 8.00 dB
+----------------------------------------
+
+----------------------------------------
+PACKET 10 OF 10
+Payload        : TEST_PACKET_10
+Packet size    : 14 bytes
+Reception time : 47000 ms
+RSSI           : -84 dBm
+SNR            : 7.75 dB
+----------------------------------------
+
+============== STATISTICS ==============
+Total packets received       : 10
+Average RSSI                 : -84.00 dBm
+RSSI variation               : 1.10 dB
+Average SNR                  : 7.75 dB
+SNR variation                : 0.37 dB
+Average inter-packet interval: 5000.00 ms
+Throughput                   : 22.47 bit/s
+========================================
+Packet collection complete; LoRa radio is asleep.
