@@ -1,0 +1,5 @@
+#pragma once
+
+#define NODE_ID CSNE-J26-303-01
+#define SERIAL_BAUD_RATE 115200
+#define START_DELAY 5000
