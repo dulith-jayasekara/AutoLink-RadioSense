@@ -32,3 +32,5 @@ struct HazardRecord
     uint8_t confidence;
     HazardStatus status;
 };
+
+bool isValidHazardRecord(const HazardRecord &record);

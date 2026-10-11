@@ -7,7 +7,9 @@ HazardRepository::HazardRepository()
 
 bool HazardRepository::add(const HazardRecord &record)
 {
-    if (recordCount >= CAPACITY || findById(record.id) != nullptr)
+    if (!isValidHazardRecord(record) ||
+        recordCount >= CAPACITY ||
+        findById(record.id) != nullptr)
     {
         return false;
     }
@@ -31,6 +33,11 @@ const HazardRecord *HazardRepository::findById(uint32_t id) const
 
 bool HazardRepository::update(const HazardRecord &record)
 {
+    if (!isValidHazardRecord(record))
+    {
+        return false;
+    }
+
     for (size_t i = 0; i < recordCount; ++i)
     {
         if (records[i].id == record.id)
