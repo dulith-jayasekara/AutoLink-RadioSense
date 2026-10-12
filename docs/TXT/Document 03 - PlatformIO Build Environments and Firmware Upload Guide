@@ -1,0 +1,248 @@
+## Document 03 — PlatformIO Build Environments and Firmware Upload Guide
+# AutoLink RadioSense
+
+**Purpose:** Explain how to configure, select, build, and upload different C++ programs to the ESP32 using PlatformIO in VS Code.
+
+## 1. Overview
+
+The `platformio.ini` file defines the build configuration for the AutoLink RadioSense firmware project. It specifies the target ESP32 board, Arduino framework, source-file selection rules, and available build environments.
+
+The project uses four independent PlatformIO environments:
+
+1. **Production** — builds the main application and its supporting modules.
+2. **Raw Transmission Test** — builds the firmware for testing LoRa packet transmission.
+3. **Raw Reception Test** — builds the firmware for testing LoRa packet reception.
+4. **Combined Transmission and Reception Test** — builds the firmware for testing both transmission and reception.
+
+Each environment selects the appropriate source files through `build_src_filter`. This allows system tests to run independently without modifying the production `src/main.cpp` file.
+
+## 2. Global Configuration
+
+### Project source directory
+
+```ini
+[platformio]
+src_dir = .
+default_envs = production
+```
+
+* `src_dir = .` sets the project root directory as the source directory used by PlatformIO. This allows the build configuration to select application files from both `src/` and `test/`.
+* `default_envs = production` makes the production environment the default when a build command does not specify an environment.
+
+### Shared environment settings
+
+```ini
+[env]
+platform = espressif32
+board = esp32doit-devkit-v1
+framework = arduino
+monitor_speed = 115200
+```
+
+These settings apply to all four environments:
+
+* **Platform:** Espressif 32.
+* **Board:** DOIT ESP32 DEVKIT V1.
+* **Framework:** Arduino.
+* **Serial Monitor baud rate:** 115200.
+
+Defining these settings once avoids unnecessary repetition in each individual environment.
+
+## 3. Production Environment
+
+```ini
+[env:production]
+build_src_filter =
+    +<src/main.cpp>
+    +<src/Core/*.cpp>
+    +<src/Hazard Memory Network/*.cpp>
+    +<src/Multihop Routing & Relay/*.cpp>
+    +<src/Route Aware Hazards Filtering/*.cpp>
+    +<src/Store Carry Forward/*.cpp>
+    -<test/>
+    -<lib/>
+    -<.pio/>
+    -<.vscode/>
+```
+
+The production environment builds the main application together with the required implementation files from the project's functional modules.
+
+The selected source files include:
+
+* `src/main.cpp` — application entry point.
+* `src/Core/` — shared core functionality, including LoRa management.
+* `src/Hazard Memory Network/` — hazard memory and network functionality.
+* `src/Multihop Routing & Relay/` — multi-hop routing and relay functionality.
+* `src/Route Aware Hazards Filtering/` — route-aware hazard filtering.
+* `src/Store Carry Forward/` — store-carry-forward functionality.
+
+The filter excludes the test directory and other non-application directories from the production source selection.
+
+**Purpose:** Build the integrated application intended for normal system operation.
+
+Build command:
+
+```bash
+pio run -e production
+```
+
+Upload command:
+
+```bash
+pio run -e production -t upload
+```
+
+## 4. Raw Transmission Test Environment
+
+```ini
+[env:raw_tx]
+build_src_filter =
+    +<src/Core/*.cpp>
+    +<test/system/1 - Raw Transmission/Raw_Transmission.cpp>
+    -<src/main.cpp>
+```
+
+This environment builds the shared core modules and the dedicated raw transmission test program.
+
+The selected files include:
+
+* `src/Core/*.cpp` — shared functionality required by the test, including LoRa initialization.
+* `test/system/1 - Raw Transmission/Raw_Transmission.cpp` — the raw transmission test implementation.
+
+The production entry point, `src/main.cpp`, is excluded to prevent it from being compiled alongside the test program.
+
+**Purpose:** Verify that the ESP32 can initialize the LoRa module and transmit raw packets.
+
+Build command:
+
+```bash
+pio run -e raw_tx
+```
+
+Upload command:
+
+```bash
+pio run -e raw_tx -t upload
+```
+
+## 5. Raw Reception Test Environment
+
+```ini
+[env:raw_rx]
+build_src_filter =
+    +<src/Core/*.cpp>
+    +<test/system/2 - Raw Reception/Raw_Reception.cpp>
+    -<src/main.cpp>
+```
+
+This environment builds the shared core modules together with the dedicated raw reception test.
+
+The production entry point is excluded, ensuring that the test has its own independent firmware entry point.
+
+**Purpose:** Verify that the ESP32 can initialize the LoRa module, receive incoming packets, and process the received payloads.
+
+Build command:
+
+```bash
+pio run -e raw_rx
+```
+
+Upload command:
+
+```bash
+pio run -e raw_rx -t upload
+```
+
+## 6. Combined Transmission and Reception Test Environment
+
+```ini
+[env:raw_tx_rx]
+build_src_filter =
+    +<src/Core/*.cpp>
+    +<test/system/3 - Raw Transmission & Reception/Raw_Transmission_Reception.cpp>
+    -<src/main.cpp>
+```
+
+This environment builds the shared core modules together with the combined transmission and reception test program.
+
+The production entry point is excluded so that the combined test can operate independently.
+
+**Purpose:** Test both LoRa transmission and reception within a single firmware application, supporting end-to-end verification of the radio communication functionality.
+
+Build command:
+
+```bash
+pio run -e raw_tx_rx
+```
+
+Upload command:
+
+```bash
+pio run -e raw_tx_rx -t upload
+```
+
+## 7. Source Selection and Build Isolation
+
+The project uses `build_src_filter` to control which source files are compiled for each environment.
+
+The `+<...>` rules include matching source files, while `-<...>` rules exclude matching files.
+
+Because `src_dir = .` sets the project root as the source directory, the filters use paths beginning with `src/` and `test/`.
+
+Each system-test environment includes the shared core implementation files and its own test program while excluding `src/main.cpp`. This avoids conflicts between multiple application entry points and preserves the production application independently of the test firmware.
+
+The external LoRa library is stored locally in the project's `lib/` directory. PlatformIO discovers and compiles the required library through its library dependency mechanism.
+
+## 8. Recommended Development Workflow
+
+### Build the production application
+
+```bash
+pio run -e production
+```
+
+### Build each system test
+
+```bash
+pio run -e raw_tx
+pio run -e raw_rx
+pio run -e raw_tx_rx
+```
+
+### Upload a selected firmware
+
+```bash
+pio run -e production -t upload
+pio run -e raw_tx -t upload
+pio run -e raw_rx -t upload
+pio run -e raw_tx_rx -t upload
+```
+
+Only upload the environment whose firmware you intend to run on the ESP32.
+
+### Open the Serial Monitor
+
+```bash
+pio device monitor
+```
+
+The configured baud rate is 115200. The Serial Monitor baud rate must match the baud rate used by the firmware's `Serial.begin()` call.
+
+## 9. Configuration Validation
+
+All four environments have been built successfully using this configuration:
+
+| Environment  | Role                                | Build status |
+| ------------ | ----------------------------------- | ------------ |
+| `production` | Integrated application              | Successful   |
+| `raw_tx`     | Raw packet transmission             | Successful   |
+| `raw_rx`     | Raw packet reception                | Successful   |
+| `raw_tx_rx`  | Combined transmission and reception | Successful   |
+
+Successful compilation confirms that PlatformIO can resolve the selected source files and required libraries for each environment. Hardware testing is still needed to verify the actual radio transmission and reception behaviour.
+
+## 10. Design Rationale
+
+This configuration separates application development from hardware-level system testing. Shared functionality is reused across environments, while each test has an independent entry point and source selection.
+•
+As AutoLink RadioSense develops, new system tests can be added as separate environments without repeatedly modifying the production entry point. This improves modularity, simplifies debugging, and supports incremental verification of the ESP32 and LoRa communication subsystem.
