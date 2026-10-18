@@ -90,6 +90,7 @@ public:
         uint32_t peerId;
         bool retransmission;
         bool valid;
+        Message message;
         Scheduler::SendRequest request;
     };
 

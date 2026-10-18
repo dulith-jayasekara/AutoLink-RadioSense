@@ -94,7 +94,17 @@ RadioAdapter::PrepareResult RadioAdapter::prepareEncounter(
         return PrepareResult::ReliabilityFull;
     }
     if (request.message == nullptr ||
-        !encodeData(*request.message, request.peerId, frame.bytes,
+        request.message->hopCount >= request.message->hopLimit)
+    {
+        return PrepareResult::Malformed;
+    }
+
+    frame.message = *request.message;
+    if (localNodeId != request.message->bundleId.sourceId)
+    {
+        ++frame.message.hopCount;
+    }
+    if (!encodeData(frame.message, request.peerId, frame.bytes,
                     sizeof(frame.bytes), frame.length))
     {
         return PrepareResult::Malformed;
@@ -127,7 +137,17 @@ RadioAdapter::TickResult RadioAdapter::tick(
         return TickResult::Failed;
     }
     if (request.message == nullptr ||
-        !encodeData(*request.message, request.peerId, frame.bytes,
+        request.message->hopCount >= request.message->hopLimit)
+    {
+        return TickResult::Failed;
+    }
+
+    frame.message = *request.message;
+    if (localNodeId != request.message->bundleId.sourceId)
+    {
+        ++frame.message.hopCount;
+    }
+    if (!encodeData(frame.message, request.peerId, frame.bytes,
                     sizeof(frame.bytes), frame.length))
     {
         return TickResult::Failed;
@@ -203,6 +223,7 @@ void RadioAdapter::clearFrame(OutgoingFrame &frame) const
     frame.peerId = 0;
     frame.retransmission = false;
     frame.valid = false;
+    frame.message = {};
     frame.request = {};
 }
 

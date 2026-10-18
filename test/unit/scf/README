@@ -1,0 +1,29 @@
+# Component 4 deterministic DTN simulation
+
+`SCF_Simulation.*` is host-only test infrastructure. It is not included by the PlatformIO production source filter. The harness constructs real `scf::RadioAdapter` instances with fake `scf::RadioPort` objects, so DATA/ACK/NACK dispatch, scheduler state, duplicate history, codec validation, and retry behavior use the production SCF modules.
+
+## Determinism
+
+The simulation advances caller-defined integer milliseconds from zero to `endTime` in `tickMs` steps. Contact windows, latency, and packet loss are explicit data. Events are ordered by delivery time and insertion order. There are no sleeps, wall-clock reads, random values, or threads.
+
+A `Contact` is bidirectional for the virtual LoRa medium. DATA is delivered only to its encoded destination. ACK/NACK frames are broadcast to connected neighbors because the current local LoRa library is broadcast-oriented and has no built-in addressing. `dropFirst` drops the first packet on that contact; `dropEvery` drops deterministic subsequent attempts whose count is divisible by that value.
+
+## Scenario policy
+
+The DTN scenario uses nodes A=1, B=2, and C=3. A contacts B first; B contacts C later; A and C never have a contact window. B stores the DATA bundle and later forwards it with the adapter's hop-count advancement. The direct-only baseline uses the same schedule but permits only source-to-destination forwarding, so it cannot use B as a relay.
+
+Simulation delivery means the destination adapter returns `DataAccepted` for the bundle. A link ACK is recorded separately and does not count as destination delivery, custody transfer, or end-to-end confirmation.
+
+## Metrics and CSV
+
+Per-message CSV columns are:
+
+`source_id,sequence,generated,data_transmissions,forwarded,delivered,duplicate_receptions,dropped,expired,retransmissions,delivery_latency_ms,hop_count,link_acknowledged`
+
+Aggregate CSV columns include packet delivery ratio, average delivery delay, forwarding overhead, retransmission count, and average buffer occupancy. Zero denominators produce `0.0`. Delivery latency is destination DATA reception time minus the message creation time. Forwarding overhead is forwarding DATA transmissions divided by generated messages.
+
+The harness exports through `Simulation::exportCsv()` and `Simulation::exportAggregateCsv()`; callers can write to any stream or file. The tests use string streams and do not create experiment result files automatically.
+
+## Limitations
+
+This harness models deterministic software behavior only. It does not model RF propagation, RSSI, SNR, airtime, duty cycle, antenna behavior, MCU scheduling, power loss, or real LoRa delivery. It does not claim research performance results.
