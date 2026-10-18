@@ -1,0 +1,85 @@
+# Component 4: Provisional DTN Store-Carry-Forward Foundation
+
+This folder contains the first isolated software foundation for Component 4 of AutoLink RadioSense. It is local in-memory logic only and is intentionally separate from the team's unapproved LoRa wire packet protocol.
+
+## Provisional model
+
+`scf::Message` represents one locally managed bundle and carries model version `1`:
+
+- `bundleId.sourceId` identifies the origin node.
+- `bundleId.sequence` is the origin-assigned sequence value. The pair is the stable bundle identity used for duplicate detection.
+- `createdAt` and `expiresAt` are application time values supplied by the caller.
+- `priority` is one of `Low`, `Normal`, `High`, or `Critical`.
+- `hopCount` records forwarding progress and `hopLimit` bounds it.
+- `payload` is a fixed 64-byte byte array with an explicit length.
+
+This is a provisional in-memory model. It does not define field ordering, byte encoding, radio framing, authentication, encryption, or interoperability with other nodes.
+
+## Buffer behavior
+
+`scf::Buffer` stores up to eight valid messages. Enqueue returns an explicit result for invalid input, duplicate identity, or a full buffer. A full buffer rejects the new message; it does not evict an existing message.
+
+Expired messages are removed by `expire(now)`. `selectNext(now)` ignores expired messages and deterministically selects the highest priority message, then the earliest expiry, then the lowest source ID, then the lowest sequence value.
+
+## Duplicate history behavior
+
+`scf::DuplicateTracker` stores up to sixteen bundle identities. It returns `Full` for a new identity after the history reaches capacity and does not silently replace an older identity. The history is bounded and can be explicitly cleared.
+
+## Assumptions and limitations
+
+- Time values are caller-provided unsigned 32-bit values; wraparound handling is not implemented.
+- No persistence, radio transmission, routing, relay selection, GPS integration, hazard serialization, or queue-to-radio integration is implemented.
+- `scf::Reliability` adds bounded local ACK/NACK state and retry scheduling only; it does not send or receive radio packets.
+- The model is not the final team packet protocol and should not be treated as a wire-format commitment.
+- `sourceId` and `sequence` must be non-zero, `expiresAt` must be later than `createdAt`, and `hopCount` must not exceed `hopLimit`.
+- Payload capacity is deliberately conservative and must be revisited during final packet design.
+
+## Reliability layer
+
+`scf::Reliability` tracks at most eight pending transmissions. `start()` is called after the caller has performed the initial send. It records the intended peer and waits for feedback without invoking any radio API.
+
+ACK identity matching requires both the bundle ID and intended peer. An ACK for another peer or another bundle cannot clear the pending entry. A repeated ACK is reported as `DuplicateAck`.
+
+NACKs use the bounded policy of scheduling one retry when retransmissions remain. A NACK does not itself send anything. The caller handles `RetryDue`, performs the send action, and calls `retrySent()` with the send timestamp. The same policy is used by `update()` when an ACK timeout is reached.
+
+`maxRetransmissions` counts sends after the initial transmission. For example, a limit of `2` permits the initial send plus two retry sends. A limit of `0` fails the entry at its first timeout without a retry.
+
+Terminal acknowledged and failed entries remain occupied until `remove()` is called. This makes capacity behavior explicit and prevents immediate identity reuse from being mistaken for an unseen transmission.
+
+Timeout deadlines use unsigned 32-bit millisecond arithmetic with the signed-difference rule. Correct ordering requires elapsed intervals and configured timeouts to remain below `2^31` milliseconds. Message expiry uses the same rule in the reliability layer; the existing message model remains unchanged.
+
+## Provisional binary frame format
+
+`SCF_Codec` defines a local provisional frame format. All multi-byte integers are unsigned big-endian values. Every frame starts with a 4-byte header: magic `0xA5`, model version, frame type, and total frame length. The encoded length must exactly equal the received byte count.
+
+DATA frames contain the header followed by bundle source ID, destination peer ID, bundle sequence, creation time, expiry time, priority, hop count, hop limit, payload length, and payload bytes. The fixed portion is 28 bytes and the maximum frame is 92 bytes.
+
+ACK and NACK frames are 17 bytes. They contain the bundle source ID, bundle sequence, responder peer ID, and a reason byte. These are link-level feedback frames for the intended peer; they are not end-to-end delivery confirmations. Unknown versions, types, lengths, invalid IDs, invalid messages, truncated frames, and oversized frames are rejected.
+
+## Encounter scheduler
+
+`SCF_Scheduler` retains up to eight valid bundles while no peer is available. `encounter(peerId, now, request)` deterministically selects the highest-priority eligible bundle and returns a send request. The caller performs the actual send and processes ACK/NACK feedback through the scheduler. Timeout retries are returned by `update(now, request)`.
+
+The scheduler does not call LoRa APIs, block, or claim custody transfer. A bundle is not removed after an ACK; application policy must explicitly call `removeBundle()`. Failed peer attempts retain the bundle and suppress another attempt to that peer until the caller explicitly calls `releasePeer()`. Attempts to other peers remain independently eligible.
+
+Peer selection uses the existing priority ordering, then earliest expiry, source ID, and sequence. Expired bundles and messages whose hop count exceeds their hop limit are not eligible. The scheduler uses signed-difference 32-bit millisecond comparisons and assumes all relevant intervals remain below `2^31` milliseconds.
+
+## LoRa adapter and dispatch layer
+
+`RadioPort` is the hardware-neutral interface used by `RadioAdapter`. A port reports one bounded packet at a time, reports overflow or error explicitly, and accepts a complete frame for transmission. Host tests provide a fake port through this interface.
+
+`LoRaPort` is the production bridge for the repository's local Arduino LoRa library. Its `initialize()` method only marks the shared radio ready; it does not call `LoRa.begin()`, change pins, change frequency, or replace `LoRa_Manager`. The integration caller must invoke `LoRa_Initialization()` first, then construct and initialize the adapter. Transmission uses the library's asynchronous `LoRa.endPacket(true)` call and the existing 433 MHz/radio settings.
+
+`RadioAdapter::poll(now, response)` performs one receive poll. It rejects malformed or oversized frames before mutating SCF state, validates DATA destination, expiry, hop budget, duplicate identity, and buffer capacity, then prepares a link ACK or NACK when appropriate. Duplicate DATA is acknowledged again so a lost ACK does not cause repeated admission. Feedback frames are matched by the existing peer-specific reliability layer.
+
+`prepareEncounter()` and `tick()` only prepare outgoing DATA frames. The caller must invoke `transmit()` to submit them. A failed radio submission leaves reliability state unchanged; a successful retransmission advances the scheduler timeout lifecycle. ACK/NACK and DATA frames are never treated as end-to-end delivery or custody-transfer proof.
+
+Minimal integration sequence:
+
+1. Call existing `LoRa_Initialization()`.
+2. Construct `scf::LoRaPort` and `scf::RadioAdapter` with the local node ID.
+3. Call `adapter.initialize()`.
+4. In the main loop, call `poll(millis(), response)` once per iteration and transmit a valid response through `adapter.transmit()`.
+5. Report peer encounters to `prepareEncounter()` and call `transmit()` for returned frames.
+6. Call `tick(millis(), frame)` periodically and transmit returned retry frames.
+7. Remove bundles only through an agreed application policy; this adapter does not claim end-to-end delivery.
