@@ -15,6 +15,9 @@ void setup()
     // Initialize LoRa module
     LoRa_Initialization();
 
+    // Initialize Wi-Fi connectivity
+    WiFi_Initialization();
+
     // Temporary first-step demonstration: store and retrieve one RAM record.
     const HazardRecord sampleHazard = {
         1,
@@ -51,5 +54,23 @@ void setup()
 
 
 void loop() {
-  // put your main code here, to run repeatedly:
+    // Keep this packet between loop iterations so its fields can be reused for each send.
+    static BeaconPacket outgoingBeacon = {};
+    static uint32_t lastBeaconTransmit = 0;
+
+    const uint32_t now = millis();
+    
+    // Send periodically without delay(), so reception can still be checked between sends.
+    if (now - lastBeaconTransmit >= BEACON_INTERVAL_MS)
+    {
+        generateBeacon(outgoingBeacon);
+        transmitBeacon(outgoingBeacon);
+        lastBeaconTransmit = now;
+    }
+
+    BeaconPacket incomingBeacon = {};
+    if (receiveBeacon(incomingBeacon))
+    {
+        extractBeaconInformation(incomingBeacon);
+    }
 }

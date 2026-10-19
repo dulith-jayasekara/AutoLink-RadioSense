@@ -6,3 +6,5 @@
 #include <math.h>
 #include <cmath>
 #include <stdint.h>
+#include <WiFi.h>
+#include <stdint.h>
