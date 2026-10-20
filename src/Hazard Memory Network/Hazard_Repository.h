@@ -15,6 +15,8 @@ public:
     bool add(const HazardRecord &record);
     const HazardRecord *findById(HazardId id) const;
     bool update(const HazardRecord &record);
+    // Remote-only deterministic merge; local updates retain strict revision checks.
+    bool mergeRemote(const HazardRecord &record);
     bool getAt(size_t index, HazardRecord &record) const;
     size_t count() const;
     size_t observationCount() const { return evidenceCount; }

@@ -7,6 +7,7 @@
 #include "Hazard Memory Network/Hazard_Sync.h"
 #include "Hazard Memory Network/Hazard_Groups.h"
 #include "Hazard Memory Network/Hazard_Confidence.h"
+#include "Hazard Memory Network/Hazard_Conflict.h"
 #include "Core/LoRa_Transport.h"
 #include "Core/WiFi_Console.h"
 #include <Preferences.h>
@@ -248,10 +249,10 @@ void execute(char *input)
             static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned long>(now),
             static_cast<unsigned>(storage.writable()), static_cast<unsigned long long>(storage.generation()));
         commandOutput->printf("observations=%u evidence_capacity=%u max_snapshot_bytes=%u "
-                              "schema=%u sync_protocol=%u confidence_policy=1\n",
+                              "schema=%u sync_protocol=%u confidence_policy=1 conflict_policy=%u\n",
             static_cast<unsigned>(repository.observationCount()), static_cast<unsigned>(HazardRepository::EVIDENCE_CAPACITY),
             static_cast<unsigned>(HazardSnapshot::MAX_SIZE), static_cast<unsigned>(HazardSnapshot::SCHEMA_VERSION),
-            static_cast<unsigned>(HazardSyncCodec::PROTOCOL_VERSION));
+            static_cast<unsigned>(HazardSyncCodec::PROTOCOL_VERSION), static_cast<unsigned>(HazardConflict::POLICY_VERSION));
         break;
     }
 }

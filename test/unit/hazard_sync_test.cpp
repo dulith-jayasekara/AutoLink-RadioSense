@@ -1,6 +1,7 @@
 #include "Hazard_Sync.h"
 #include "Hazard_Groups.h"
 #include "Hazard_Confidence.h"
+#include "Hazard_Conflict.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -144,7 +145,7 @@ void testCodec()
     assert(HazardSyncCodec::decode(bytes.data(), bytes.size(), decoded));
     assert(decoded.sender == 7 && decoded.length == 17);
     assert(bytes[4] == HazardSyncCodec::PROTOCOL_VERSION);
-    Packet legacy = bytes; legacy[4] = 2;
+    Packet legacy = bytes; legacy[4] = 3;
     uint32_t legacyCrc = UINT32_MAX;
     for (size_t i = 0; i < legacy.size() - 4; ++i)
     {
@@ -253,10 +254,10 @@ void testCorrelationAndConflicts()
     b.sync.receive(valid.data(), valid.size(), 2001);
     assert(b.backend.writes == writes && b.sync.stats().ignored >= 4);
     HazardRecord conflicting = *a.repo.findById(id); conflicting.severity = 5;
-    assert(b.service.importRemote(conflicting) == HazardResult::Conflict);
+    assert(b.service.importRemote(conflicting) == HazardResult::Ok);
     const Packet conflict = pack(summary(a, conflicting));
     b.sync.receive(conflict.data(), conflict.size(), 3000);
-    assert(b.sync.stats().conflicts == 1 && b.repo.findById(id)->severity == 3);
+    assert(b.repo.findById(id)->severity == 5);
     assert(a.service.resolve(id, NOW + 1, NOW + 1) == HazardResult::Ok);
     Network network; network.run({&a, &b}, 4000, 90000);
     assert(b.repo.findById(id)->status == HazardStatus::Resolved);
@@ -370,6 +371,121 @@ void testEvidenceGroupsAcrossReconnect()
     std::cout << "PASS: independent evidence/groups converge under loss/reconnect; relays and clearances do not inflate observer counts.\n";
 }
 
+void testConcurrentRecordResolution()
+{
+    Node a(7), b(8), c(9); const HazardId id = a.seed();
+    Network network; network.faults = true;
+    network.run({&a, &b, &c}, 0, 180000); equal(a, b); equal(b, c);
+    // Each disconnected node expires the same record at the same version.
+    size_t changed;
+    for (Node *node : {&a, &b, &c})
+        assert(node->service.processLifecycle(NOW + 3600, changed) == HazardResult::Ok && changed == 1);
+    assert(a.repo.findById(id)->version == 2 && c.repo.findById(id)->version == 2);
+    network.run({&a, &b, &c}, 180000, 240000); equal(a, b); equal(b, c);
+    assert(a.repo.findById(id)->updatedByNodeId == 9);
+    assert(a.repo.findById(id)->status == HazardStatus::Expired);
+    const size_t writesA = a.backend.writes, writesB = b.backend.writes, writesC = c.backend.writes;
+    network.run({&a, &b, &c}, 420000, 90000);
+    assert(a.backend.writes == writesA && b.backend.writes == writesB && c.backend.writes == writesC);
+    HazardStorage restart(b.backend); HazardRepository restored;
+    assert(restart.load(restored) == StorageLoad::Loaded);
+    assert(sameHazardRecord(*restored.findById(id), *a.repo.findById(id)));
+
+    Node d(10), e(11), f(12); const HazardId other = d.seed();
+    Network second; second.faults = true;
+    second.run({&d, &e, &f}, 0, 180000);
+    PhoneHazardReport input{HazardType::RoadObstacle, 4, 6.9271, 79.8612, NOW + 1, NOW + 1, 5};
+    // A long disconnected branch has a larger revision count, but an older observation.
+    for (unsigned n = 1; n <= 4; ++n)
+    {
+        input.observedAt = input.locationFixAt = NOW + n;
+        assert(d.service.revise(other, input, NOW + n, 100 + n) == HazardResult::Ok);
+    }
+    input.severity = 2; input.observedAt = input.locationFixAt = NOW + 20;
+    assert(e.service.revise(other, input, NOW + 20, 200) == HazardResult::Ok);
+    assert(d.repo.findById(other)->version == 5 && e.repo.findById(other)->version == 2);
+    second.run({&d, &e, &f}, 180000, 240000); equal(d, e); equal(e, f);
+    assert(d.repo.findById(other)->version == 2 && d.repo.findById(other)->severity == 2);
+    assert(d.repo.observationCount() == 6); // All losing-branch evidence is retained.
+
+    // Clearance beats a higher-version ongoing branch, regardless of receive order.
+    assert(f.service.resolve(other, NOW + 30, NOW + 30, 300) == HazardResult::Ok);
+    input.observedAt = input.locationFixAt = NOW + 40;
+    assert(d.service.revise(other, input, NOW + 40, 400) == HazardResult::Ok);
+    input.observedAt = input.locationFixAt = NOW + 41;
+    assert(d.service.revise(other, input, NOW + 41, 401) == HazardResult::Ok);
+    second.run({&d, &e, &f}, 420000, 240000); equal(d, e); equal(e, f);
+    assert(d.repo.findById(other)->status == HazardStatus::Resolved && d.repo.findById(other)->version == 3);
+    assert(d.repo.observationCount() == 9);
+    std::cout << "PASS: equal-version expiry, fresher lower-version revisions and clearance converge under loss/reordering; all evidence persists without repeated writes.\n";
+}
+
+void testConflictPolicyAndPersistence()
+{
+    Node origin(7), receiver(8); const HazardId id = origin.seed();
+    const HazardRecord base = *origin.repo.findById(id);
+    // Equal-time/version writer tie, and each fallback field, are deterministic.
+    HazardRecord tie = base; tie.updatedByNodeId++;
+    assert(HazardConflict::compare(tie, base) > 0);
+    std::vector<HazardRecord> ties;
+    tie = base; tie.type = HazardType::Flooding; ties.push_back(tie);
+    tie = base; tie.severity++; ties.push_back(tie);
+    tie = base; tie.latitude += 0.00001; ties.push_back(tie);
+    tie = base; tie.longitude += 0.00001; ties.push_back(tie);
+    tie = base; tie.locationFixAt++; ties.push_back(tie);
+    tie = base; tie.locationAccuracyMeters++; ties.push_back(tie);
+    tie = base; tie.expiresAt++; ties.push_back(tie);
+    tie = base; tie.confidence++; ties.push_back(tie);
+    for (const HazardRecord &r : ties)
+    {
+        assert(isValidHazardRecord(r) && HazardConflict::compare(r, base) > 0);
+        HazardRepository left, right;
+        assert(left.add(base) && left.mergeRemote(r));
+        assert(right.add(r) && !right.mergeRemote(base));
+        assert(sameHazardRecord(*left.findById(id), *right.findById(id)));
+    }
+    std::vector<HazardRecord> records;
+    records.push_back(base);
+    for (unsigned i = 1; i < 12; ++i)
+    {
+        HazardRecord r = base;
+        r.lastObservedAt += i % 3; r.locationFixAt = r.lastObservedAt;
+        r.version += i % 4; r.updatedByNodeId = 7 + i % 3;
+        r.status = static_cast<HazardStatus>(i % 5); r.severity = 1 + i % 5;
+        records.push_back(r);
+    }
+    for (const HazardRecord &a : records)
+        for (const HazardRecord &b : records)
+        {
+            assert(HazardConflict::compare(a, b) == -HazardConflict::compare(b, a));
+            for (const HazardRecord &c : records)
+                if (HazardConflict::compare(a, b) >= 0 && HazardConflict::compare(b, c) >= 0)
+                    assert(HazardConflict::compare(a, c) >= 0);
+        }
+    HazardRecord winner = base;
+    for (const HazardRecord &r : records) if (HazardConflict::compare(r, winner) > 0) winner = r;
+    // Every permutation of a representative ongoing/expired/resolved subset.
+    const HazardRecord variants[] = {base, records[4], records[3], winner};
+    unsigned order[] = {0, 1, 2, 3};
+    do
+    {
+        HazardRepository repo;
+        for (unsigned index : order) repo.mergeRemote(variants[index]);
+        assert(sameHazardRecord(*repo.findById(id), winner));
+    } while (std::next_permutation(order, order + 4));
+    assert(receiver.service.importRemote(base) == HazardResult::Ok);
+    HazardRecord bad = winner; bad.createdAt--;
+    assert(receiver.service.importRemote(bad) == HazardResult::Conflict);
+    assert(sameHazardRecord(*receiver.repo.findById(id), base));
+    receiver.backend.fail = true;
+    assert(receiver.service.importRemote(winner) == HazardResult::RecordPersistenceFailed);
+    assert(sameHazardRecord(*receiver.repo.findById(id), base));
+    HazardStorage restart(receiver.backend); HazardRepository restored;
+    assert(restart.load(restored) == StorageLoad::Recovered);
+    assert(sameHazardRecord(*restored.findById(id), base));
+    std::cout << "PASS: conflict ordering is symmetric/transitive and independent of arrival order; identity mismatch and failed persistent merges preserve the prior record.\n";
+}
+
 void testConfidenceEvidenceSync()
 {
     Node a(7), b(8), c(9); const HazardId id = a.seed();
@@ -408,4 +524,6 @@ void testHazardSync()
     testRevisionAndOriginDeparture(); testBoundedQueues();
     testEvidenceGroupsAcrossReconnect();
     testConfidenceEvidenceSync();
+    testConcurrentRecordResolution();
+    testConflictPolicyAndPersistence();
 }

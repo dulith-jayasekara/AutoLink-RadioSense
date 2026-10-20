@@ -13,7 +13,7 @@ struct SyncFrame
 class HazardSyncCodec
 {
 public:
-    static constexpr uint8_t PROTOCOL_VERSION = 3;
+    static constexpr uint8_t PROTOCOL_VERSION = 4;
     static constexpr size_t MAX_FRAME = 119;
     static bool recognizes(const uint8_t *data, size_t size);
     static bool encode(const SyncFrame &frame, uint8_t *data, size_t capacity, size_t &size);

@@ -1,4 +1,5 @@
 #include "Hazard_Repository.h"
+#include "Hazard_Conflict.h"
 #include <cmath>
 
 HazardRepository::HazardRepository()
@@ -68,7 +69,7 @@ bool HazardRepository::update(const HazardRecord &record)
         if (records[i].id == record.id)
         {
             const HazardRecord &current = records[i];
-            // Equal-version conflicts need the later distributed resolution engine.
+            // Local edits require a strictly newer, non-regressing revision.
             if (record.originNodeId != current.originNodeId ||
                 record.createdAt != current.createdAt ||
                 record.version <= current.version ||
@@ -82,6 +83,20 @@ bool HazardRepository::update(const HazardRecord &record)
     }
 
     return false;
+}
+
+bool HazardRepository::mergeRemote(const HazardRecord &record)
+{
+    if (!isValidHazardRecord(record)) return false;
+    for (size_t i = 0; i < recordCount; ++i)
+    {
+        if (records[i].id != record.id) continue;
+        if (!HazardConflict::sameIdentity(records[i], record) ||
+            HazardConflict::compare(record, records[i]) <= 0) return false;
+        records[i] = record;
+        return true;
+    }
+    return add(record);
 }
 
 bool HazardRepository::getAt(size_t index, HazardRecord &record) const

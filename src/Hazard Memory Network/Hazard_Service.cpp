@@ -2,6 +2,7 @@
 #include "Hazard_Storage.h"
 #include "Hazard_Lifecycle.h"
 #include "Hazard_Confidence.h"
+#include "Hazard_Conflict.h"
 #include <cmath>
 
 const char *hazardResultName(HazardResult result)
@@ -48,16 +49,17 @@ HazardResult HazardService::importRemote(const HazardRecord &record)
     if (current)
     {
         if (sameHazardRecord(*current, record)) return HazardResult::Unchanged;
-        if (current->createdAt != record.createdAt) return HazardResult::Conflict;
-        if ((current->status == HazardStatus::Resolved || current->status == HazardStatus::Expired) &&
-            record.status != current->status) return HazardResult::TerminalRecord;
-        if (record.version == current->version) return HazardResult::Conflict;
-        if (record.version < current->version || record.lastObservedAt < current->lastObservedAt)
+        if (!HazardConflict::sameIdentity(*current, record)) return HazardResult::Conflict;
+        if (HazardConflict::compare(record, *current) <= 0)
+        {
+            if ((current->status == HazardStatus::Resolved || current->status == HazardStatus::Expired) &&
+                record.status != current->status) return HazardResult::TerminalRecord;
             return HazardResult::StaleUpdate;
+        }
     }
     else if (repository.count() == HazardRepository::CAPACITY) return HazardResult::Full;
     HazardRepository candidate = repository;
-    if (!(current ? candidate.update(record) : candidate.add(record))) return HazardResult::Conflict;
+    if (!candidate.mergeRemote(record)) return HazardResult::Conflict;
     return commit(candidate);
 }
 

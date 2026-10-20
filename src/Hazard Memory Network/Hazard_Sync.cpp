@@ -145,11 +145,10 @@ void HazardSync::handleSummary(const SyncFrame &f)
             continue;
         }
         const HazardRecord *local = evidence ? nullptr : repository.findById(id);
-        if (local && local->version >= version)
-        {
-            if (local->version == version && HazardSyncCodec::fingerprint(*local) != digest) ++counters.conflicts;
-            continue;
-        }
+        // Versions alone cannot rank terminal markers or concurrent revisions.
+        // Fetch every differing advertised record, then apply the shared policy.
+        if (local && local->version == version && HazardSyncCodec::fingerprint(*local) == digest) continue;
+        if (local && local->version == version) ++counters.conflicts;
         Pending *available = nullptr;
         bool found = false;
         for (auto &p : pending)
@@ -158,7 +157,7 @@ void HazardSync::handleSummary(const SyncFrame &f)
             if (p.peer == f.sender && p.id == id && p.evidence == evidence)
             {
                 found = true;
-                if (p.session != f.session || version > p.version)
+                if (p.session != f.session || version != p.version || digest != p.digest)
                     p = Pending{true, f.sender, f.session, id, version, digest, 0, 0, 0, evidence};
                 break;
             }
@@ -174,7 +173,7 @@ void HazardSync::handleRequest(const SyncFrame &f)
     const uint32_t wanted = static_cast<uint32_t>(HazardSyncCodec::get(f.payload + 8, 4));
     const bool evidence = isEvidence(f.type);
     const HazardRecord *record = evidence ? nullptr : repository.findById(id);
-    if (evidence ? (wanted != 1 || !repository.findObservation(id)) : (!record || record->version < wanted))
+    if (evidence ? (wanted != 1 || !repository.findObservation(id)) : !record)
     { ++counters.rejected; return; }
     Response *available = nullptr;
     for (auto &r : responses)
@@ -207,8 +206,7 @@ void HazardSync::handleUpdate(const SyncFrame &f)
     {
         HazardRecord record;
         if (!HazardSyncCodec::decodeRecord(f.payload + 8, record) || record.id != match->id ||
-            record.version < match->version ||
-            (record.version == match->version && HazardSyncCodec::fingerprint(record) != match->digest))
+            record.version != match->version || HazardSyncCodec::fingerprint(record) != match->digest)
         { ++counters.rejected; return; }
         result = service.importRemote(record);
     }
@@ -258,7 +256,8 @@ void HazardSync::tick(uint32_t now)
         const HazardObservation *o = p.evidence ? repository.findObservation(p.id) : nullptr;
         if (o) { p.used = false; continue; }
         const HazardRecord *local = p.evidence ? nullptr : repository.findById(p.id);
-        if (local && local->version >= p.version) { p.used = false; continue; }
+        if (local && local->version == p.version && HazardSyncCodec::fingerprint(*local) == p.digest)
+        { p.used = false; continue; }
         if (p.attempts >= MAX_ATTEMPTS && static_cast<uint32_t>(now - p.lastSent) >= RETRY_MS)
         { p.used = false; ++counters.exhausted; }
     }
