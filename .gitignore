@@ -3,3 +3,10 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local experimental output belongs outside the shared branch.
+test/results/
+test/system/hardware-results/
