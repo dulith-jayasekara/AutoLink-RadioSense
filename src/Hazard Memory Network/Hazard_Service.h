@@ -33,6 +33,9 @@ public:
     HazardResult create(const PhoneHazardReport &report, uint32_t now, HazardId &id, uint64_t clientId = 0);
     HazardResult revise(HazardId id, const PhoneHazardReport &report, uint32_t now, uint64_t clientId = 0);
     HazardResult resolve(HazardId id, uint32_t clearanceAt, uint32_t now, uint64_t clientId = 0);
+    // Immutable presence votes; do not edit or reopen the canonical hazard record.
+    HazardResult assess(HazardId id, const PhoneHazardReport &report, ObservationKind kind,
+                        uint32_t now, uint64_t clientId);
     // One atomic persistent batch; changed is zero unless the entire batch commits.
     HazardResult processLifecycle(uint32_t now, size_t &changed);
     // Preserve remote identity, observation and confidence; persist before acceptance.

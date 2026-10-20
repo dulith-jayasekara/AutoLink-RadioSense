@@ -30,11 +30,14 @@ bool HazardEvidenceCodec::valid(const HazardObservation &o)
 {
     return o.observerNodeId && (o.id >> 32) == o.observerNodeId && static_cast<uint32_t>(o.id) &&
         (o.hazardId >> 32) && static_cast<uint32_t>(o.hazardId) &&
-        o.kind >= ObservationKind::Report && o.kind <= ObservationKind::Clearance &&
+        o.kind >= ObservationKind::Report && o.kind <= ObservationKind::Contradiction &&
         (o.kind != ObservationKind::Report || o.id == o.hazardId) &&
         isValidHazardType(o.type) && o.severity >= 1 && o.severity <= 5 &&
         isValidCoordinates(o.latitude, o.longitude) && o.observedAt && o.locationFixAt &&
-        o.locationFixAt <= o.observedAt && std::isfinite(o.locationAccuracyMeters) &&
+        o.locationFixAt <= o.observedAt &&
+        ((o.kind != ObservationKind::Confirmation && o.kind != ObservationKind::Contradiction) ||
+         (o.clientReportId && o.observedAt - o.locationFixAt <= 120 && o.locationAccuracyMeters <= 25)) &&
+        std::isfinite(o.locationAccuracyMeters) &&
         o.locationAccuracyMeters > 0 && o.locationAccuracyMeters <= 100;
 }
 bool HazardEvidenceCodec::encode(const HazardObservation &o, uint8_t *p)

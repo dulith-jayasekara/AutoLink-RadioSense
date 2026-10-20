@@ -77,7 +77,7 @@ void testCodec()
     const auto bytes = encode(original, 42);
     assert(bytes.size() == HazardSnapshot::HEADER_SIZE + 16 * HazardSnapshot::RECORD_SIZE);
     assert(bytes[0] == 'A' && bytes[1] == 'H' && bytes[2] == 'M' && bytes[3] == '2');
-    assert(bytes[4] == 2 && bytes[6] == 60 && bytes[8] == 16 && bytes[12] == 42);
+    assert(bytes[4] == HazardSnapshot::SCHEMA_VERSION && bytes[6] == 60 && bytes[8] == 16 && bytes[12] == 42);
     // Known offsets guard the explicit wire layout, including little-endian node identity.
     assert(bytes[24] == 1 && bytes[28] == 7 && bytes[32] == 7 && bytes[36] == 8);
     assert(bytes[40] == 3 && bytes[41] == 4 && bytes[82] == 75 && bytes[83] == 4);
@@ -105,7 +105,7 @@ void testCodec()
     bad = bytes;
     std::copy(bad.begin() + 24, bad.begin() + 84, bad.begin() + 84); crc(bad);
     assert(!HazardSnapshot::decode(bad.data(), bad.size(), untouched, generation)); // Duplicate ID.
-    bad = bytes; bad[4] = 3; crc(bad);
+    bad = bytes; bad[4] = HazardSnapshot::SCHEMA_VERSION + 1; crc(bad);
     assert(!HazardSnapshot::decode(bad.data(), bad.size(), untouched, generation));
     bad = bytes; bad[8] = 17; crc(bad);
     assert(!HazardSnapshot::decode(bad.data(), bad.size(), untouched, generation));

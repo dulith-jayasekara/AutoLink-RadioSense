@@ -6,6 +6,7 @@
 #include "Hazard Memory Network/Hazard_Lifecycle.h"
 #include "Hazard Memory Network/Hazard_Sync.h"
 #include "Hazard Memory Network/Hazard_Groups.h"
+#include "Hazard Memory Network/Hazard_Confidence.h"
 #include "Core/LoRa_Transport.h"
 #include "Core/WiFi_Console.h"
 #include <Preferences.h>
@@ -54,6 +55,7 @@ void help()
     commandOutput->println("RESOLVE <id> <clearance_utc> (local controlled-test clearance)");
     commandOutput->println("REPORT_ID <client_id> <report fields> | REVISE_ID <client_id> <id> <report fields>");
     commandOutput->println("RESOLVE_ID <client_id> <id> <clearance_utc> | GROUPS | EVIDENCE <id>");
+    commandOutput->println("CONFIRM_ID / CONTRADICT_ID <client_id> <id> <report fields> | CONFIDENCE <id>");
     commandOutput->println("GET <id> | LIST | TYPE <type> | NEAR <lat> <lon> <radius_m> | MEMORY | SYNC | HELP");
     commandOutput->println("Phone GPS is simulated by REPORT. Accepted changes are saved to LittleFS.");
 }
@@ -66,11 +68,14 @@ void printRecord(const HazardRecord &r)
     char ageText[16] = "UNKNOWN";
     if (knownAge) snprintf(ageText, sizeof(ageText), "%lu", static_cast<unsigned long>(age));
     const bool terminal = r.status == HazardStatus::Resolved || r.status == HazardStatus::Expired;
+    const HazardConfidenceResult confidence = HazardConfidence::evaluate(repository, r, now);
     const char *effective = knownAge || terminal ?
-        HazardLifecycle::statusName(HazardLifecycle::evaluate(r, now)) : "UnknownTime";
+        HazardLifecycle::statusName(confidence.effectiveStatus) : "UnknownTime";
     commandOutput->printf("id=%llu origin=%lu updater=%lu type=%u severity=%u lat=%.6f lon=%.6f "
                   "created=%lu observed=%lu fix=%lu accuracy=%.1f expires=%lu version=%lu confidence=%u "
-                  "status=%u(%s) effective=%s age_seconds=%s\n",
+                  "status=%u(%s) effective=%s age_seconds=%s effective_confidence=%u "
+                  "evidence_score=%u decay_penalty=%u supporting_observers=%u contradicting_observers=%u "
+                  "confidence_time_known=%u confidence_level=%s\n",
                   static_cast<unsigned long long>(r.id), static_cast<unsigned long>(r.originNodeId),
                   static_cast<unsigned long>(r.updatedByNodeId), static_cast<unsigned>(r.type),
                   static_cast<unsigned>(r.severity),
@@ -78,7 +83,11 @@ void printRecord(const HazardRecord &r)
                   static_cast<unsigned long>(r.lastObservedAt), static_cast<unsigned long>(r.locationFixAt),
                   r.locationAccuracyMeters, static_cast<unsigned long>(r.expiresAt),
                   static_cast<unsigned long>(r.version), static_cast<unsigned>(r.confidence),
-                  static_cast<unsigned>(r.status), HazardLifecycle::statusName(r.status), effective, ageText);
+                  static_cast<unsigned>(r.status), HazardLifecycle::statusName(r.status), effective, ageText,
+                  static_cast<unsigned>(confidence.score), static_cast<unsigned>(confidence.evidenceScore),
+                  static_cast<unsigned>(confidence.decayPenalty), static_cast<unsigned>(confidence.supportingObservers),
+                  static_cast<unsigned>(confidence.contradictingObservers), static_cast<unsigned>(confidence.timeKnown),
+                  HazardConfidence::level(confidence.score));
 }
 
 void runLifecycle(uint32_t now, bool verbose = false)
@@ -100,6 +109,26 @@ void execute(char *input)
     if (c.action != ConsoleAction::Time) runLifecycle(now);
     switch (c.action)
     {
+    case ConsoleAction::Confidence:
+    {
+        const HazardRecord *record = repository.findById(c.id);
+        if (record) printRecord(*record); else commandOutput->println("NOT_FOUND");
+        break;
+    }
+    case ConsoleAction::Confirm:
+    case ConsoleAction::Contradict:
+    {
+        const ObservationKind kind = c.action == ConsoleAction::Confirm ?
+            ObservationKind::Confirmation : ObservationKind::Contradiction;
+        const HazardResult result = service->assess(c.id, c.report, kind, now, c.clientReportId);
+        commandOutput->println(hazardResultName(result));
+        if (result == HazardResult::Ok || result == HazardResult::Unchanged)
+        {
+            const HazardRecord *record = repository.findById(c.id);
+            if (record) printRecord(*record);
+        }
+        break;
+    }
     case ConsoleAction::Groups:
     {
         HazardGroup groups[HazardRepository::CAPACITY];
@@ -218,9 +247,11 @@ void execute(char *input)
             static_cast<unsigned>(sizeof(HazardRecord)), static_cast<unsigned>(sizeof(repository)),
             static_cast<unsigned>(ESP.getFreeHeap()), static_cast<unsigned long>(now),
             static_cast<unsigned>(storage.writable()), static_cast<unsigned long long>(storage.generation()));
-        commandOutput->printf("observations=%u evidence_capacity=%u max_snapshot_bytes=%u\n",
+        commandOutput->printf("observations=%u evidence_capacity=%u max_snapshot_bytes=%u "
+                              "schema=%u sync_protocol=%u confidence_policy=1\n",
             static_cast<unsigned>(repository.observationCount()), static_cast<unsigned>(HazardRepository::EVIDENCE_CAPACITY),
-            static_cast<unsigned>(HazardSnapshot::MAX_SIZE));
+            static_cast<unsigned>(HazardSnapshot::MAX_SIZE), static_cast<unsigned>(HazardSnapshot::SCHEMA_VERSION),
+            static_cast<unsigned>(HazardSyncCodec::PROTOCOL_VERSION));
         break;
     }
 }

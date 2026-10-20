@@ -14,6 +14,7 @@ public:
 class HazardSnapshot
 {
 public:
+    static constexpr uint16_t SCHEMA_VERSION = 3;
     static constexpr size_t HEADER_SIZE = 24;
     static constexpr size_t RECORD_SIZE = 60;
     static constexpr size_t MAX_SIZE = HEADER_SIZE + HazardRepository::CAPACITY * RECORD_SIZE +

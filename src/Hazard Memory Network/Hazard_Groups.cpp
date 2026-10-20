@@ -63,7 +63,7 @@ size_t HazardGroups::build(const HazardRepository &repo, HazardGroup *output, si
             HazardObservation o; repo.observationAt(i, o);
             if (!member(group, o.hazardId)) continue;
             ++group.observationCount;
-            if (o.kind == ObservationKind::Clearance) continue;
+            if (o.kind == ObservationKind::Clearance || o.kind == ObservationKind::Contradiction) continue;
             bool seen = false;
             for (size_t j = 0; j < observersCount; ++j) if (observers[j] == o.observerNodeId) seen = true;
             if (!seen) observers[observersCount++] = o.observerNodeId;

@@ -70,6 +70,14 @@ bool parseHazardCommand(char *line, HazardCommand &c)
     uint64_t number;
     uint64_t timestamp;
     uint64_t clientId;
+    if ((!strcmp(tokens[0], "CONFIRM_ID") || !strcmp(tokens[0], "CONTRADICT_ID")) && count == 10 &&
+        unsignedNumber(tokens[1], UINT64_MAX, clientId) && clientId &&
+        unsignedNumber(tokens[2], UINT64_MAX, number) && number && reportFields(tokens + 3, c.report))
+    { c.action = !strcmp(tokens[0], "CONFIRM_ID") ? ConsoleAction::Confirm : ConsoleAction::Contradict;
+      c.clientReportId = clientId; c.id = number; return true; }
+    if (!strcmp(tokens[0], "CONFIDENCE") && count == 2 &&
+        unsignedNumber(tokens[1], UINT64_MAX, number) && number)
+    { c.action = ConsoleAction::Confidence; c.id = number; return true; }
     if (!strcmp(tokens[0], "REPORT_ID") && count == 9 &&
         unsignedNumber(tokens[1], UINT64_MAX, clientId) && clientId && reportFields(tokens + 2, c.report))
     { c.action = ConsoleAction::Report; c.clientReportId = clientId; return true; }

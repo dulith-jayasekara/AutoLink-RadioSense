@@ -2,7 +2,7 @@
 #include "Hazard_Record.h"
 #include <stddef.h>
 
-enum class ObservationKind : uint8_t { Report = 1, Revision = 2, Clearance = 3 };
+enum class ObservationKind : uint8_t { Report = 1, Revision = 2, Clearance = 3, Confirmation = 4, Contradiction = 5 };
 struct HazardObservation
 {
     uint64_t id;

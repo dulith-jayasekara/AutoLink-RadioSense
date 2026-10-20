@@ -4,7 +4,7 @@
 namespace
 {
 constexpr size_t RECORD_BYTES = HazardSnapshot::HEADER_SIZE + HazardSnapshot::RECORD_SIZE;
-static_assert(RECORD_BYTES == 84, "Update protocol version requires singleton schema 2");
+static_assert(RECORD_BYTES == 84, "Update protocol requires an 84-byte singleton snapshot");
 bool due(uint32_t now, uint32_t deadline) { return static_cast<int32_t>(now - deadline) >= 0; }
 uint32_t crc32(const uint8_t *data, size_t size)
 {
@@ -63,7 +63,7 @@ bool HazardSyncCodec::encode(const SyncFrame &f, uint8_t *data, size_t capacity,
 {
     size = 0;
     if (!data || !validFrame(f) || capacity < 27 + f.length) return false;
-    put(data, 0x314e4841u, 4); data[4] = 2; data[5] = static_cast<uint8_t>(f.type);
+    put(data, 0x314e4841u, 4); data[4] = PROTOCOL_VERSION; data[5] = static_cast<uint8_t>(f.type);
     put(data + 6, f.sender, 4); put(data + 10, f.target, 4);
     put(data + 14, f.session, 4); put(data + 18, f.sequence, 4);
     data[22] = static_cast<uint8_t>(f.length);
@@ -74,7 +74,7 @@ bool HazardSyncCodec::encode(const SyncFrame &f, uint8_t *data, size_t capacity,
 }
 bool HazardSyncCodec::decode(const uint8_t *data, size_t size, SyncFrame &f)
 {
-    if (!recognizes(data, size) || size < 27 || size > MAX_FRAME || data[4] != 2 ||
+    if (!recognizes(data, size) || size < 27 || size > MAX_FRAME || data[4] != PROTOCOL_VERSION ||
         size != 27u + data[22] || get(data + size - 4, 4) != crc32(data, size - 4)) return false;
     SyncFrame parsed = {};
     parsed.type = static_cast<SyncType>(data[5]);

@@ -55,7 +55,7 @@ bool HazardSnapshot::encode(const HazardRepository &repo, uint64_t generation,
     if (!data || !generation || capacity < required) return false;
     uint8_t *p = data;
     put(p, 0x324d4841u, 4); // "AHM2"
-    put(p, 2, 2); // Schema 2 adds immutable observations; schema 1 remains readable.
+    put(p, SCHEMA_VERSION, 2); // Schema 3 adds presence votes; schemas 1/2 remain readable.
     put(p, RECORD_SIZE, 2);
     put(p, repo.count(), 2);
     put(p, repo.observationCount(), 2);
@@ -93,7 +93,7 @@ bool HazardSnapshot::decode(const uint8_t *data, size_t size, HazardRepository &
     const uint8_t *p = data;
     if (get(p, 4) != 0x324d4841u) return false;
     const uint64_t schema = get(p, 2);
-    if ((schema != 1 && schema != 2) || get(p, 2) != RECORD_SIZE) return false;
+    if (schema < 1 || schema > SCHEMA_VERSION || get(p, 2) != RECORD_SIZE) return false;
     const size_t count = static_cast<size_t>(get(p, 2));
     const size_t observations = static_cast<size_t>(get(p, 2));
     if ((schema == 1 && observations) || observations > HazardRepository::EVIDENCE_CAPACITY ||
@@ -124,7 +124,8 @@ bool HazardSnapshot::decode(const uint8_t *data, size_t size, HazardRepository &
     for (size_t i = 0; i < observations; ++i)
     {
         HazardObservation o;
-        if (!HazardEvidenceCodec::decode(p, o) || !staged.addObservation(o)) return false;
+        if (!HazardEvidenceCodec::decode(p, o) ||
+            (schema < 3 && o.kind > ObservationKind::Clearance) || !staged.addObservation(o)) return false;
         p += HazardEvidenceCodec::SIZE;
     }
     repo = staged;

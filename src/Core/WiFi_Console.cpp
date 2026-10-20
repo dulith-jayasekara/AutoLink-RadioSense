@@ -40,7 +40,7 @@ void connectRouter()
 class Response : public Print
 {
 public:
-    char data[8193] = {};
+    char data[16385] = {};
     size_t length = 0;
     bool truncated = false;
     void clear() { length = 0; data[0] = 0; truncated = false; }
@@ -61,7 +61,7 @@ const char page[] PROGMEM = R"HTML(<!doctype html>
 <button id="refresh">Refresh now</button> <label><input id="auto" type="checkbox" checked style="width:auto"> Auto refresh</label>
 <pre id="status">Waiting for node status…</pre>
 <h2>Node commands</h2>
-<p><small>Use HELP, LIST, SYNC, MEMORY, GROUPS, GET &lt;id&gt; or EVIDENCE &lt;id&gt;. REPORT, REVISE, RESOLVE and TIME change node data. Supply GPS and UTC from your phone when reporting.</small></p>
+<p><small>Use HELP, LIST, SYNC, MEMORY, GROUPS, GET &lt;id&gt;, EVIDENCE &lt;id&gt; or CONFIDENCE &lt;id&gt;. CONFIRM_ID and CONTRADICT_ID add observation votes. REPORT, REVISE, RESOLVE and TIME change node data. Supply GPS and UTC from your phone when reporting.</small></p>
 <form id="form"><input id="command" maxlength="191" placeholder="EVIDENCE 7503418289721180161" required autocomplete="off"><button id="send">Run command</button></form>
 <pre id="result">Command results appear here.</pre>
 <h2>Join your broadband Wi-Fi</h2>
@@ -87,7 +87,7 @@ void headers()
 void reply()
 {
     headers();
-    if (response.truncated) server.send(507, "text/plain", "Output exceeded 8192 bytes; query individual records.\n");
+    if (response.truncated) server.send(507, "text/plain", "Output exceeded 16384 bytes; query individual records.\n");
     else server.send(200, "text/plain; charset=utf-8", response.data);
 }
 }

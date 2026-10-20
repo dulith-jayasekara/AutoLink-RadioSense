@@ -2,7 +2,8 @@
 #include "Hazard_Service.h"
 #include <stddef.h>
 
-enum class ConsoleAction { Help, Time, Report, Revise, Resolve, List, Get, Type, Near, Memory, Sync, Groups, Evidence };
+enum class ConsoleAction { Help, Time, Report, Revise, Resolve, List, Get, Type, Near, Memory, Sync, Groups, Evidence,
+                           Confirm, Contradict, Confidence };
 struct HazardCommand
 {
     ConsoleAction action;

@@ -1,6 +1,7 @@
 #include "Hazard_Service.h"
 #include "Hazard_Storage.h"
 #include "Hazard_Lifecycle.h"
+#include "Hazard_Confidence.h"
 #include <cmath>
 
 const char *hazardResultName(HazardResult result)
@@ -240,6 +241,33 @@ HazardResult HazardService::resolve(HazardId id, uint32_t clearanceAt, uint32_t 
     ++resolved.version;
     HazardRepository candidate = repository;
     if (!candidate.update(resolved)) return HazardResult::StaleUpdate;
+    if (!candidate.addObservation(evidence)) return HazardResult::Conflict;
+    return commit(candidate);
+}
+
+HazardResult HazardService::assess(HazardId id, const PhoneHazardReport &input, ObservationKind kind,
+                                   uint32_t now, uint64_t clientId)
+{
+    if (!clientId || (kind != ObservationKind::Confirmation && kind != ObservationKind::Contradiction))
+        return HazardResult::InvalidReport;
+    HazardObservation evidence = observation(input, id, kind, clientId);
+    const HazardObservation *previous = repository.findClientObservation(nodeId, clientId);
+    if (previous) return sameObservationPayload(*previous, evidence) ? HazardResult::Unchanged : HazardResult::Conflict;
+    const HazardResult valid = validate(input, now);
+    if (valid != HazardResult::Ok) return valid;
+    const HazardRecord *record = repository.findById(id);
+    if (!record) return HazardResult::NotFound;
+    if (record->status == HazardStatus::Resolved || record->status == HazardStatus::Expired || now >= record->expiresAt)
+        return HazardResult::TerminalRecord;
+    if (input.observedAt < record->lastObservedAt) return HazardResult::StaleUpdate;
+    if (input.type != record->type || input.locationAccuracyMeters > HazardConfidence::MAX_DISTANCE_METERS ||
+        hazardDistanceMeters(input.latitude, input.longitude, record->latitude, record->longitude) >
+            HazardConfidence::MAX_DISTANCE_METERS) return HazardResult::InvalidReport;
+    if (storage && !storage->writable()) return HazardResult::RecordPersistenceFailed;
+    if (repository.observationCount() == HazardRepository::EVIDENCE_CAPACITY) return HazardResult::EvidenceFull;
+    const HazardResult allocated = allocateId(evidence.id);
+    if (allocated != HazardResult::Ok) return allocated;
+    HazardRepository candidate = repository;
     if (!candidate.addObservation(evidence)) return HazardResult::Conflict;
     return commit(candidate);
 }

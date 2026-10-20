@@ -1,5 +1,6 @@
 #include "Hazard_Sync.h"
 #include "Hazard_Groups.h"
+#include "Hazard_Confidence.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -142,6 +143,17 @@ void testCodec()
     SyncFrame decoded = {};
     assert(HazardSyncCodec::decode(bytes.data(), bytes.size(), decoded));
     assert(decoded.sender == 7 && decoded.length == 17);
+    assert(bytes[4] == HazardSyncCodec::PROTOCOL_VERSION);
+    Packet legacy = bytes; legacy[4] = 2;
+    uint32_t legacyCrc = UINT32_MAX;
+    for (size_t i = 0; i < legacy.size() - 4; ++i)
+    {
+        legacyCrc ^= legacy[i];
+        for (unsigned bit = 0; bit < 8; ++bit)
+            legacyCrc = (legacyCrc >> 1) ^ ((legacyCrc & 1) ? 0xedb88320u : 0);
+    }
+    HazardSyncCodec::put(legacy.data() + legacy.size() - 4, ~legacyCrc, 4);
+    assert(!HazardSyncCodec::decode(legacy.data(), legacy.size(), decoded));
     for (size_t i = 0; i < bytes.size(); ++i)
     {
         Packet bad = bytes; bad[i] ^= 1;
@@ -357,6 +369,37 @@ void testEvidenceGroupsAcrossReconnect()
     assert(HazardGroups::build(restored, groups, 16) == 1 && groups[0].independentObservers == 2);
     std::cout << "PASS: independent evidence/groups converge under loss/reconnect; relays and clearances do not inflate observer counts.\n";
 }
+
+void testConfidenceEvidenceSync()
+{
+    Node a(7), b(8), c(9); const HazardId id = a.seed();
+    Network network; network.faults = true;
+    network.run({&a, &b, &c}, 0, 180000); equal(a, b); equal(b, c);
+    PhoneHazardReport input{HazardType::RoadObstacle, 3, 6.9271, 79.8612, NOW + 1, NOW + 1, 5};
+    assert(b.service.assess(id, input, ObservationKind::Confirmation, NOW + 1, 100) == HazardResult::Ok);
+    network.run({&a, &b, &c}, 180000, 180000); equal(a, b); equal(b, c);
+    for (Node *node : {&a, &b, &c})
+        assert(HazardConfidence::evaluate(node->repo, *node->repo.findById(id), NOW + 1).score == 70);
+    network.connected = false;
+    input.observedAt = input.locationFixAt = NOW + 2;
+    assert(b.service.assess(id, input, ObservationKind::Contradiction, NOW + 2, 101) == HazardResult::Ok);
+    network.run({&a, &b, &c}, 360000, 30000);
+    assert(HazardConfidence::evaluate(a.repo, *a.repo.findById(id), NOW + 2).score == 70);
+    network.connected = true;
+    network.run({&a, &b, &c}, 390000, 180000); equal(a, b); equal(b, c);
+    for (Node *node : {&a, &b, &c})
+    {
+        const size_t writes = node->backend.writes;
+        const HazardRecord &record = *node->repo.findById(id);
+        assert(HazardConfidence::evaluate(node->repo, record, NOW + 2).score == 25);
+        assert(HazardConfidence::evaluate(node->repo, record, NOW + 900).score == 15);
+        assert(node->backend.writes == writes && record.version == 1 && record.confidence == 50);
+    }
+    HazardStorage reboot(c.backend); HazardRepository restored;
+    assert(reboot.load(restored) == StorageLoad::Loaded);
+    assert(HazardConfidence::evaluate(restored, *restored.findById(id), NOW + 2).score == 25);
+    std::cout << "PASS: confidence votes converge over three-node lossy/reordered LoRa sync and reconnection; scores survive snapshot reload without record churn.\n";
+}
 }
 void testHazardSync()
 {
@@ -364,4 +407,5 @@ void testHazardSync()
     testRetryBusyAndWrap(); testCorrelationAndConflicts(); testCapacityAndFailure();
     testRevisionAndOriginDeparture(); testBoundedQueues();
     testEvidenceGroupsAcrossReconnect();
+    testConfidenceEvidenceSync();
 }
