@@ -51,11 +51,12 @@ bool HazardSnapshot::encode(const HazardRepository &repo, uint64_t generation,
 {
     size = 0;
     const size_t required = HEADER_SIZE + repo.count() * RECORD_SIZE +
-        repo.observationCount() * HazardEvidenceCodec::SIZE;
+        repo.observationCount() * HazardEvidenceCodec::SIZE +
+        (repo.retirementCount() ? 2 + repo.retirementCount() * 13 : 0);
     if (!data || !generation || capacity < required) return false;
     uint8_t *p = data;
     put(p, 0x324d4841u, 4); // "AHM2"
-    put(p, SCHEMA_VERSION, 2); // Schema 3 adds presence votes; schemas 1/2 remain readable.
+    put(p, SCHEMA_VERSION, 2); // Schema 4 adds optional compact terminal markers; schemas 1-3 remain readable.
     put(p, RECORD_SIZE, 2);
     put(p, repo.count(), 2);
     put(p, repo.observationCount(), 2);
@@ -80,6 +81,17 @@ bool HazardSnapshot::encode(const HazardRepository &repo, uint64_t generation,
         if (!repo.observationAt(i, o) || !HazardEvidenceCodec::encode(o, p)) return false;
         p += HazardEvidenceCodec::SIZE;
     }
+    if (repo.retirementCount())
+    {
+        put(p, repo.retirementCount(), 2);
+        for (size_t i = 0; i < repo.retirementCount(); ++i)
+        {
+            HazardRetirement marker; repo.retirementAt(i, marker);
+            if (!validRetirement(marker)) return false;
+            put(p, marker.id, 8); put(p, marker.createdAt, 4);
+            put(p, static_cast<uint8_t>(marker.status), 1);
+        }
+    }
     uint8_t *crcField = data + 20;
     put(crcField, checksum(data, required), 4);
     size = required;
@@ -98,7 +110,9 @@ bool HazardSnapshot::decode(const uint8_t *data, size_t size, HazardRepository &
     const size_t observations = static_cast<size_t>(get(p, 2));
     if ((schema == 1 && observations) || observations > HazardRepository::EVIDENCE_CAPACITY ||
         count > HazardRepository::CAPACITY ||
-        size != HEADER_SIZE + count * RECORD_SIZE + observations * HazardEvidenceCodec::SIZE) return false;
+        size < HEADER_SIZE + count * RECORD_SIZE + observations * HazardEvidenceCodec::SIZE) return false;
+    const size_t baseSize = HEADER_SIZE + count * RECORD_SIZE + observations * HazardEvidenceCodec::SIZE;
+    if (schema < 4 && size != baseSize) return false;
     const uint64_t decodedGeneration = get(p, 8);
     const uint32_t crc = static_cast<uint32_t>(get(p, 4));
     if (!decodedGeneration || crc != checksum(data, size)) return false;
@@ -127,6 +141,22 @@ bool HazardSnapshot::decode(const uint8_t *data, size_t size, HazardRepository &
         if (!HazardEvidenceCodec::decode(p, o) ||
             (schema < 3 && o.kind > ObservationKind::Clearance) || !staged.addObservation(o)) return false;
         p += HazardEvidenceCodec::SIZE;
+    }
+    if (size != baseSize)
+    {
+        if (size < baseSize + 2) return false;
+        const size_t markers = static_cast<size_t>(get(p, 2));
+        if (!markers || markers > HazardRepository::RETIREMENT_CAPACITY || size != baseSize + 2 + markers * 13) return false;
+        for (size_t i = 0; i < markers; ++i)
+        {
+            HazardRetirement marker;
+            marker.id = get(p, 8); marker.createdAt = static_cast<uint32_t>(get(p, 4));
+            marker.status = static_cast<HazardStatus>(get(p, 1));
+            if (staged.findById(marker.id) || staged.findRetirement(marker.id)) return false;
+            for (size_t j = 0; j < staged.observationCount(); ++j)
+            { HazardObservation o; staged.observationAt(j, o); if (o.hazardId == marker.id) return false; }
+            if (!staged.retire(marker)) return false;
+        }
     }
     repo = staged;
     generation = decodedGeneration;

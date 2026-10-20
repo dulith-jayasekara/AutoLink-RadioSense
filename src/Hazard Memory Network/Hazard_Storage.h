@@ -14,11 +14,12 @@ public:
 class HazardSnapshot
 {
 public:
-    static constexpr uint16_t SCHEMA_VERSION = 3;
+    static constexpr uint16_t SCHEMA_VERSION = 4;
     static constexpr size_t HEADER_SIZE = 24;
     static constexpr size_t RECORD_SIZE = 60;
     static constexpr size_t MAX_SIZE = HEADER_SIZE + HazardRepository::CAPACITY * RECORD_SIZE +
-        HazardRepository::EVIDENCE_CAPACITY * HazardEvidenceCodec::SIZE;
+        HazardRepository::EVIDENCE_CAPACITY * HazardEvidenceCodec::SIZE +
+        2 + HazardRepository::RETIREMENT_CAPACITY * 13;
     static bool encode(const HazardRepository &repository, uint64_t generation,
                        uint8_t *data, size_t capacity, size_t &size);
     // On any failure the destination repository and generation remain unchanged.

@@ -8,6 +8,7 @@
 #include "Hazard Memory Network/Hazard_Groups.h"
 #include "Hazard Memory Network/Hazard_Confidence.h"
 #include "Hazard Memory Network/Hazard_Conflict.h"
+#include "Hazard Memory Network/Hazard_Memory.h"
 #include "Core/LoRa_Transport.h"
 #include "Core/WiFi_Console.h"
 #include <Preferences.h>
@@ -57,6 +58,7 @@ void help()
     commandOutput->println("REPORT_ID <client_id> <report fields> | REVISE_ID <client_id> <id> <report fields>");
     commandOutput->println("RESOLVE_ID <client_id> <id> <clearance_utc> | GROUPS | EVIDENCE <id>");
     commandOutput->println("CONFIRM_ID / CONTRADICT_ID <client_id> <id> <report fields> | CONFIDENCE <id>");
+    commandOutput->println("CLEANUP | RETIRED | POSITION <phone_lat> <phone_lon> (optional priority context)");
     commandOutput->println("GET <id> | LIST | TYPE <type> | NEAR <lat> <lon> <radius_m> | MEMORY | SYNC | HELP");
     commandOutput->println("Phone GPS is simulated by REPORT. Accepted changes are saved to LittleFS.");
 }
@@ -76,7 +78,7 @@ void printRecord(const HazardRecord &r)
                   "created=%lu observed=%lu fix=%lu accuracy=%.1f expires=%lu version=%lu confidence=%u "
                   "status=%u(%s) effective=%s age_seconds=%s effective_confidence=%u "
                   "evidence_score=%u decay_penalty=%u supporting_observers=%u contradicting_observers=%u "
-                  "confidence_time_known=%u confidence_level=%s\n",
+                  "confidence_time_known=%u confidence_level=%s priority=%u\n",
                   static_cast<unsigned long long>(r.id), static_cast<unsigned long>(r.originNodeId),
                   static_cast<unsigned long>(r.updatedByNodeId), static_cast<unsigned>(r.type),
                   static_cast<unsigned>(r.severity),
@@ -88,7 +90,7 @@ void printRecord(const HazardRecord &r)
                   static_cast<unsigned>(confidence.score), static_cast<unsigned>(confidence.evidenceScore),
                   static_cast<unsigned>(confidence.decayPenalty), static_cast<unsigned>(confidence.supportingObservers),
                   static_cast<unsigned>(confidence.contradictingObservers), static_cast<unsigned>(confidence.timeKnown),
-                  HazardConfidence::level(confidence.score));
+                  HazardConfidence::level(confidence.score), service->priority(r, now));
 }
 
 void runLifecycle(uint32_t now, bool verbose = false)
@@ -113,7 +115,9 @@ void execute(char *input)
     case ConsoleAction::Confidence:
     {
         const HazardRecord *record = repository.findById(c.id);
-        if (record) printRecord(*record); else commandOutput->println("NOT_FOUND");
+        if (record) printRecord(*record);
+        else if (repository.findRetirement(c.id)) commandOutput->println("TERMINAL_RECORD_RETIRED; enter RETIRED");
+        else commandOutput->println("NOT_FOUND");
         break;
     }
     case ConsoleAction::Confirm:
@@ -167,14 +171,15 @@ void execute(char *input)
         const HazardSyncStats &s = hazardSync->stats();
         commandOutput->printf("sync sent=%lu received=%lu imported=%lu unchanged=%lu conflicts=%lu rejected=%lu "
                       "malformed=%lu ignored=%lu retries=%lu exhausted=%lu queue_full=%lu busy=%lu "
-                      "evidence_imported=%lu evidence_unchanged=%lu\n",
+                      "evidence_imported=%lu evidence_unchanged=%lu retirement_pages_imported=%lu\n",
             static_cast<unsigned long>(s.sent), static_cast<unsigned long>(s.received),
             static_cast<unsigned long>(s.imported), static_cast<unsigned long>(s.unchanged),
             static_cast<unsigned long>(s.conflicts), static_cast<unsigned long>(s.rejected),
             static_cast<unsigned long>(s.malformed), static_cast<unsigned long>(s.ignored),
             static_cast<unsigned long>(s.retries), static_cast<unsigned long>(s.exhausted),
             static_cast<unsigned long>(s.queueFull), static_cast<unsigned long>(s.transportBusy),
-            static_cast<unsigned long>(s.evidenceImported), static_cast<unsigned long>(s.evidenceUnchanged));
+            static_cast<unsigned long>(s.evidenceImported), static_cast<unsigned long>(s.evidenceUnchanged),
+            static_cast<unsigned long>(s.retirementPagesImported));
         break;
     }
 #else
@@ -213,7 +218,9 @@ void execute(char *input)
     case ConsoleAction::Get:
     {
         const HazardRecord *record = repository.findById(c.id);
-        if (record) printRecord(*record); else commandOutput->println("NOT_FOUND");
+        if (record) printRecord(*record);
+        else if (repository.findRetirement(c.id)) commandOutput->println("TERMINAL_RECORD_RETIRED; enter RETIRED");
+        else commandOutput->println("NOT_FOUND");
         break;
     }
     case ConsoleAction::Resolve:
@@ -241,6 +248,24 @@ void execute(char *input)
         commandOutput->printf("matches=%u\n", static_cast<unsigned>(matches));
         break;
     }
+    case ConsoleAction::Position:
+        commandOutput->println(service->setPosition(c.latitude, c.longitude) ? "OK" : "INVALID_REPORT");
+        break;
+    case ConsoleAction::Cleanup:
+    {
+        size_t removed = 0;
+        const HazardResult result = service->cleanupMemory(now, removed);
+        commandOutput->printf("cleanup=%s removed=%u\n", hazardResultName(result), static_cast<unsigned>(removed));
+        break;
+    }
+    case ConsoleAction::Retired:
+        for (size_t i = 0; i < repository.retirementCount(); ++i)
+        {
+            HazardRetirement marker; repository.retirementAt(i, marker);
+            commandOutput->printf("retired=%llu created=%lu status=%u(%s)\n", static_cast<unsigned long long>(marker.id),
+                static_cast<unsigned long>(marker.createdAt), static_cast<unsigned>(marker.status), HazardLifecycle::statusName(marker.status));
+        }
+        break;
     case ConsoleAction::Memory:
         commandOutput->printf("records=%u capacity=%u record_bytes=%u repository_bytes=%u free_heap=%u utc=%lu "
                       "storage_writable=%u snapshot_generation=%llu\n",
@@ -253,6 +278,12 @@ void execute(char *input)
             static_cast<unsigned>(repository.observationCount()), static_cast<unsigned>(HazardRepository::EVIDENCE_CAPACITY),
             static_cast<unsigned>(HazardSnapshot::MAX_SIZE), static_cast<unsigned>(HazardSnapshot::SCHEMA_VERSION),
             static_cast<unsigned>(HazardSyncCodec::PROTOCOL_VERSION), static_cast<unsigned>(HazardConflict::POLICY_VERSION));
+        commandOutput->printf("memory_policy=1 retired_count=%u retirement_capacity=%u retention_seconds=%lu "
+                              "evicted=%lu cleaned=%lu position_known=%u retirement_full=%u\n",
+            static_cast<unsigned>(repository.retirementCount()), static_cast<unsigned>(HazardRepository::RETIREMENT_CAPACITY),
+            static_cast<unsigned long>(HazardMemory::RETENTION_SECONDS), static_cast<unsigned long>(service->evictedCount()),
+            static_cast<unsigned long>(service->cleanedCount()), static_cast<unsigned>(service->positionKnown()),
+            static_cast<unsigned>(repository.retirementCount() == HazardRepository::RETIREMENT_CAPACITY));
         break;
     }
 }
@@ -309,6 +340,11 @@ void setup()
         HazardObservation observation; repository.observationAt(i, observation);
         if (observation.observerNodeId == node && static_cast<uint32_t>(observation.id) > sequence)
             identityReady = false;
+    }
+    for (size_t i = 0; i < repository.retirementCount(); ++i)
+    {
+        HazardRetirement marker; repository.retirementAt(i, marker);
+        if ((marker.id >> 32) == node && static_cast<uint32_t>(marker.id) > sequence) identityReady = false;
     }
     service = new (serviceStorage) HazardService(repository, node, sequence, reserveSequence, nullptr, &storage);
     commandOutput->printf("Hazard memory stage 5; node=%lu; ID storage=%s\n",

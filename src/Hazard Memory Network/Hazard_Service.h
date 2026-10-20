@@ -41,6 +41,13 @@ public:
     // Preserve remote identity, observation and confidence; persist before acceptance.
     HazardResult importRemote(const HazardRecord &record);
     HazardResult importObservation(const HazardObservation &observation);
+    HazardResult importRetirements(const HazardRetirement *markers, size_t count);
+    HazardResult cleanupMemory(uint32_t now, size_t &removed);
+    bool setPosition(double latitude, double longitude);
+    bool positionKnown() const { return hasPosition; }
+    unsigned priority(const HazardRecord &record, uint32_t now) const;
+    uint32_t evictedCount() const { return memoryEvictions; }
+    uint32_t cleanedCount() const { return memoryCleaned; }
     static uint32_t ttlSeconds(HazardType type);
     static constexpr uint8_t INITIAL_CONFIDENCE = 50;
     static constexpr uint32_t MAX_FIX_AGE_SECONDS = 120;
@@ -60,4 +67,7 @@ private:
     ReserveSequence reserve;
     void *context;
     HazardStorage *storage;
+    uint32_t memoryUtc, memoryEvictions, memoryCleaned;
+    bool hasPosition;
+    double positionLatitude, positionLongitude;
 };

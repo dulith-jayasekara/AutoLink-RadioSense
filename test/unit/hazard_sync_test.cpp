@@ -2,6 +2,7 @@
 #include "Hazard_Groups.h"
 #include "Hazard_Confidence.h"
 #include "Hazard_Conflict.h"
+#include "Hazard_Memory.h"
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -145,7 +146,7 @@ void testCodec()
     assert(HazardSyncCodec::decode(bytes.data(), bytes.size(), decoded));
     assert(decoded.sender == 7 && decoded.length == 17);
     assert(bytes[4] == HazardSyncCodec::PROTOCOL_VERSION);
-    Packet legacy = bytes; legacy[4] = 3;
+    Packet legacy = bytes; legacy[4] = 4;
     uint32_t legacyCrc = UINT32_MAX;
     for (size_t i = 0; i < legacy.size() - 4; ++i)
     {
@@ -486,6 +487,47 @@ void testConflictPolicyAndPersistence()
     std::cout << "PASS: conflict ordering is symmetric/transitive and independent of arrival order; identity mismatch and failed persistent merges preserve the prior record.\n";
 }
 
+void testRetirementSyncAndReconnect()
+{
+    Node a(7), b(8), c(9); const HazardId id = a.seed();
+    Network network; network.faults = true;
+    network.run({&a, &b, &c}, 0, 180000); equal(a, b); equal(b, c);
+    const HazardRecord old = *c.repo.findById(id);
+    HazardObservation evidence; assert(c.repo.observationAt(0, evidence));
+    assert(a.service.resolve(id, NOW + 1, NOW + 1, 99) == HazardResult::Ok);
+    size_t removed;
+    assert(a.service.cleanupMemory(old.expiresAt + HazardMemory::RETENTION_SECONDS, removed) == HazardResult::Ok && removed == 1);
+    network.run({&a, &b}, 180000, 120000);
+    assert(!a.repo.count() && !b.repo.count() && !a.repo.observationCount() && !b.repo.observationCount());
+    assert(b.repo.findRetirement(id)->status == HazardStatus::Resolved);
+    assert(c.repo.findById(id)); // Disconnected node retains its old ongoing copy.
+    const size_t writes = b.backend.writes;
+    network.run({&a, &b}, 300000, 90000);
+    assert(b.backend.writes == writes); // Repeated retirement pages do not write flash.
+    network.run({&a, &b, &c}, 390000, 180000);
+    for (Node *node : {&a, &b, &c})
+    {
+        assert(!node->repo.findById(id) && !node->repo.observationCount());
+        assert(node->repo.findRetirement(id)->status == HazardStatus::Resolved);
+        assert(node->service.importRemote(old) == HazardResult::TerminalRecord);
+        assert(node->service.importObservation(evidence) == HazardResult::TerminalRecord);
+    }
+    HazardStorage reboot(c.backend); HazardRepository restored;
+    assert(reboot.load(restored) == StorageLoad::Loaded && restored.findRetirement(id));
+    Node d(10), e(11); Network pages; pages.faults = true;
+    for (uint32_t i = 1; i <= 64; ++i)
+        assert(d.repo.retire(HazardRetirement{(static_cast<uint64_t>(20) << 32) | i, NOW, HazardStatus::Expired}));
+    pages.run({&d, &e}, 0, 600000);
+    assert(e.repo.retirementCount() == 64 && e.sync.stats().retirementPagesImported >= 16);
+    for (uint32_t i = 1; i <= 64; ++i) assert(e.repo.findRetirement((static_cast<uint64_t>(20) << 32) | i));
+    SyncFrame invalid = {}; invalid.type = SyncType::Retirements; invalid.sender = 20;
+    invalid.session = 1; invalid.sequence = 1; invalid.length = 14; invalid.payload[0] = 1;
+    HazardSyncCodec::put(invalid.payload + 1, (static_cast<uint64_t>(20) << 32) | 1, 8);
+    HazardSyncCodec::put(invalid.payload + 9, NOW, 4); invalid.payload[13] = static_cast<uint8_t>(HazardStatus::Active);
+    uint8_t bytes[119]; size_t size; assert(!HazardSyncCodec::encode(invalid, bytes, sizeof(bytes), size));
+    std::cout << "PASS: terminal retirement pages converge under loss/reordering, remove disconnected stale copies, survive reboot, reject replay, and page all 64 markers without repeated writes.\n";
+}
+
 void testConfidenceEvidenceSync()
 {
     Node a(7), b(8), c(9); const HazardId id = a.seed();
@@ -526,4 +568,5 @@ void testHazardSync()
     testConfidenceEvidenceSync();
     testConcurrentRecordResolution();
     testConflictPolicyAndPersistence();
+    testRetirementSyncAndReconnect();
 }

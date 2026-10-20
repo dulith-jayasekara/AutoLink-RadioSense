@@ -61,7 +61,7 @@ const char page[] PROGMEM = R"HTML(<!doctype html>
 <button id="refresh">Refresh now</button> <label><input id="auto" type="checkbox" checked style="width:auto"> Auto refresh</label>
 <pre id="status">Waiting for node status…</pre>
 <h2>Node commands</h2>
-<p><small>Use HELP, LIST, SYNC, MEMORY, GROUPS, GET &lt;id&gt;, EVIDENCE &lt;id&gt; or CONFIDENCE &lt;id&gt;. CONFIRM_ID and CONTRADICT_ID add observation votes. REPORT, REVISE, RESOLVE and TIME change node data. Supply GPS and UTC from your phone when reporting.</small></p>
+<p><small>Use HELP, LIST, SYNC, MEMORY, GROUPS, GET &lt;id&gt;, EVIDENCE &lt;id&gt; or CONFIDENCE &lt;id&gt;. MEMORY shows priorities/retirement capacity; RETIRED lists compact terminal markers. CLEANUP reclaims eligible terminal history. POSITION sets optional phone-supplied priority context. CONFIRM_ID and CONTRADICT_ID add observation votes. REPORT, REVISE, RESOLVE and TIME change node data. Supply GPS and UTC from your phone when reporting.</small></p>
 <form id="form"><input id="command" maxlength="191" placeholder="EVIDENCE 7503418289721180161" required autocomplete="off"><button id="send">Run command</button></form>
 <pre id="result">Command results appear here.</pre>
 <h2>Join your broadband Wi-Fi</h2>

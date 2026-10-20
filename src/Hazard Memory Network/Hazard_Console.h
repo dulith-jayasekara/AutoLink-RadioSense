@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 enum class ConsoleAction { Help, Time, Report, Revise, Resolve, List, Get, Type, Near, Memory, Sync, Groups, Evidence,
-                           Confirm, Contradict, Confidence };
+                           Confirm, Contradict, Confidence, Cleanup, Retired, Position };
 struct HazardCommand
 {
     ConsoleAction action;

@@ -22,10 +22,11 @@ def main():
                 str(root / "test" / "unit" / "hazard_sync_test.cpp"),
                 str(root / "test" / "unit" / "hazard_evidence_test.cpp"),
                 str(root / "test" / "unit" / "hazard_confidence_test.cpp"),
+                str(root / "test" / "unit" / "hazard_memory_policy_test.cpp"),
                 *[str(source / name) for name in (
                     "Hazard_Record.cpp", "Hazard_Repository.cpp",
                     "Hazard_Service.cpp", "Hazard_Console.cpp", "Hazard_Storage.cpp", "Hazard_Lifecycle.cpp",
-                    "Hazard_Sync.cpp", "Hazard_Evidence.cpp", "Hazard_Groups.cpp", "Hazard_Confidence.cpp", "Hazard_Conflict.cpp",
+                    "Hazard_Sync.cpp", "Hazard_Evidence.cpp", "Hazard_Groups.cpp", "Hazard_Confidence.cpp", "Hazard_Conflict.cpp", "Hazard_Memory.cpp",
                 )],
                 "-o", binary,
             ],

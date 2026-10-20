@@ -23,6 +23,20 @@ bool isEvidence(SyncType type)
 bool validFrame(const SyncFrame &f)
 {
     if (!f.sender || !f.session || !f.sequence) return false;
+    if (f.type == SyncType::Retirements)
+    {
+        if (f.target || !f.length || !f.payload[0] || f.payload[0] > 4 || f.length != 1u + 13u * f.payload[0]) return false;
+        for (size_t i = 0; i < f.payload[0]; ++i)
+        {
+            const uint8_t *entry = f.payload + 1 + i * 13;
+            const HazardRetirement m{HazardSyncCodec::get(entry, 8),
+                static_cast<uint32_t>(HazardSyncCodec::get(entry + 8, 4)), static_cast<HazardStatus>(entry[12])};
+            if (!validRetirement(m)) return false;
+            for (size_t j = 0; j < i; ++j)
+                if (m.id == HazardSyncCodec::get(f.payload + 1 + j * 13, 8)) return false;
+        }
+        return true;
+    }
     if (f.type == SyncType::Summary || f.type == SyncType::EvidenceSummary)
     {
         if (!f.length || f.payload[0] > 4 || f.length != 1u + 16u * f.payload[0]) return false;
@@ -112,7 +126,7 @@ HazardSync::HazardSync(HazardRepository &repo, HazardService &svc, uint32_t ownN
                        uint32_t bootSession, Send callback, void *data)
     : repository(repo), service(svc), node(ownNode), session(bootSession), sequence(0),
       nextTransmit(0), nextSummary(0), summaryCursor(0), requestCursor(0), responseCursor(0),
-      summarizing(false), started(false), send(callback), context(data), pending{}, responses{}, counters{} {}
+      retirementOffset(0), summarizing(false), started(false), send(callback), context(data), pending{}, responses{}, counters{} {}
 uint32_t HazardSync::allocateSequence()
 {
     if (sequence == UINT32_MAX) return 0;
@@ -144,6 +158,7 @@ void HazardSync::handleSummary(const SyncFrame &f)
             if (HazardEvidenceCodec::fingerprint(*observation) != digest) ++counters.conflicts;
             continue;
         }
+        if (!evidence && repository.findRetirement(id)) continue;
         const HazardRecord *local = evidence ? nullptr : repository.findById(id);
         // Versions alone cannot rank terminal markers or concurrent revisions.
         // Fetch every differing advertised record, then apply the shared policy.
@@ -232,6 +247,20 @@ void HazardSync::receive(const uint8_t *data, size_t size, uint32_t milliseconds
     ++counters.received;
     switch (frame.type)
     {
+    case SyncType::Retirements:
+    {
+        HazardRetirement markers[4];
+        for (size_t i = 0; i < frame.payload[0]; ++i)
+        {
+            const uint8_t *entry = frame.payload + 1 + i * 13;
+            markers[i] = HazardRetirement{HazardSyncCodec::get(entry, 8),
+                static_cast<uint32_t>(HazardSyncCodec::get(entry + 8, 4)), static_cast<HazardStatus>(entry[12])};
+        }
+        const HazardResult result = service.importRetirements(markers, frame.payload[0]);
+        if (result == HazardResult::Ok) ++counters.retirementPagesImported;
+        else if (result != HazardResult::Unchanged) ++counters.rejected;
+        break;
+    }
     case SyncType::EvidenceSummary:
     case SyncType::Summary: handleSummary(frame); break;
     case SyncType::EvidenceRequest:
@@ -253,6 +282,7 @@ void HazardSync::tick(uint32_t now)
     for (auto &p : pending)
     {
         if (!p.used) continue;
+        if (!p.evidence && repository.findRetirement(p.id)) { p.used = false; continue; }
         const HazardObservation *o = p.evidence ? repository.findObservation(p.id) : nullptr;
         if (o) { p.used = false; continue; }
         const HazardRecord *local = p.evidence ? nullptr : repository.findById(p.id);
@@ -306,17 +336,30 @@ void HazardSync::tick(uint32_t now)
     }
     if (!summarizing && due(now, nextSummary)) { summaryCursor = 0; summarizing = true; }
     if (!summarizing) return;
+    if (summaryCursor && summaryCursor >= repository.count() + repository.observationCount() + repository.retirementCount())
+    { ++retirementOffset; summarizing = false; nextSummary = now + SUMMARY_INTERVAL_MS; return; }
     SyncFrame frame = {};
-    const bool evidence = summaryCursor >= repository.count();
-    const size_t cursor = evidence ? summaryCursor - repository.count() : summaryCursor;
-    const size_t available = evidence ? repository.observationCount() : repository.count();
-    frame.type = evidence ? SyncType::EvidenceSummary : SyncType::Summary;
+    const size_t records = repository.count(), observations = repository.observationCount();
+    const bool retirement = summaryCursor >= records + observations && repository.retirementCount();
+    const bool evidence = !retirement && summaryCursor >= records;
+    const size_t cursor = retirement ? summaryCursor - records - observations :
+        (evidence ? summaryCursor - records : summaryCursor);
+    const size_t available = retirement ? repository.retirementCount() :
+        (evidence ? observations : records);
+    const size_t entryBytes = retirement ? 13 : 16;
+    frame.type = retirement ? SyncType::Retirements : (evidence ? SyncType::EvidenceSummary : SyncType::Summary);
     frame.sequence = allocateSequence();
     size_t count = 0;
     while (count < 4 && cursor + count < available)
     {
-        uint8_t *entry = frame.payload + 1 + count * 16;
-        if (evidence)
+        uint8_t *entry = frame.payload + 1 + count * entryBytes;
+        if (retirement)
+        {
+            HazardRetirement marker; repository.retirementAt((cursor + count + retirementOffset) % available, marker);
+            HazardSyncCodec::put(entry, marker.id, 8); HazardSyncCodec::put(entry + 8, marker.createdAt, 4);
+            entry[12] = static_cast<uint8_t>(marker.status);
+        }
+        else if (evidence)
         {
             HazardObservation o; repository.observationAt(cursor + count, o);
             HazardSyncCodec::put(entry, o.id, 8);
@@ -332,11 +375,11 @@ void HazardSync::tick(uint32_t now)
         }
         ++count;
     }
-    frame.payload[0] = static_cast<uint8_t>(count); frame.length = 1 + count * 16;
+    frame.payload[0] = static_cast<uint8_t>(count); frame.length = 1 + count * entryBytes;
     if (transmit(frame))
     {
         summaryCursor += count;
-        if (summaryCursor >= repository.count() + repository.observationCount())
-        { summarizing = false; nextSummary = now + SUMMARY_INTERVAL_MS + ((node ^ session) % 2001); }
+        if (summaryCursor >= repository.count() + repository.observationCount() + repository.retirementCount())
+        { ++retirementOffset; summarizing = false; nextSummary = now + SUMMARY_INTERVAL_MS + ((node ^ session) % 2001); }
     }
 }

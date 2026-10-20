@@ -310,6 +310,7 @@ void testHazardLifecycle();
 void testHazardSync();
 void testHazardEvidence(const char *directory);
 void testHazardConfidence();
+void testHazardMemoryPolicy();
 int main(int argc, char **argv)
 {
     assert(argc == 2);
@@ -321,5 +322,6 @@ int main(int argc, char **argv)
     testHazardSync();
     testHazardEvidence(argv[1]);
     testHazardConfidence();
+    testHazardMemoryPolicy();
     std::cout << "Hazard Memory host tests passed (records, reports, IDs, queries, parser, clock, storage, lifecycle, synchronization).\n";
 }

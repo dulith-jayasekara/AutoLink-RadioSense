@@ -204,7 +204,9 @@ void testMigrationAndConsole()
     vote(a, id, 2, NOW + 1);
     bytes.resize(HazardSnapshot::MAX_SIZE);
     assert(HazardSnapshot::encode(a.repo, 2, bytes.data(), bytes.size(), size)); bytes.resize(size);
-    assert(bytes[4] == 3 && HazardSnapshot::decode(bytes.data(), bytes.size(), restored, generation));
+    assert(bytes[4] == HazardSnapshot::SCHEMA_VERSION && HazardSnapshot::decode(bytes.data(), bytes.size(), restored, generation));
+    bytes[4] = 3; checksum(bytes);
+    assert(HazardSnapshot::decode(bytes.data(), bytes.size(), restored, generation));
     bytes[4] = 2; checksum(bytes);
     assert(!HazardSnapshot::decode(bytes.data(), bytes.size(), restored, generation));
     char confirm[] = "CONFIRM_ID 20 30064771073 1 3 0 0 1792454400 1792454400 5";

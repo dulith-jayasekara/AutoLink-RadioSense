@@ -2,7 +2,7 @@
 #include "Hazard_Service.h"
 #include "Hazard_Storage.h"
 
-enum class SyncType : uint8_t { Summary = 1, Request = 2, Update = 3, EvidenceSummary = 4, EvidenceRequest = 5, EvidenceUpdate = 6 };
+enum class SyncType : uint8_t { Summary = 1, Request = 2, Update = 3, EvidenceSummary = 4, EvidenceRequest = 5, EvidenceUpdate = 6, Retirements = 7 };
 struct SyncFrame
 {
     SyncType type;
@@ -13,7 +13,7 @@ struct SyncFrame
 class HazardSyncCodec
 {
 public:
-    static constexpr uint8_t PROTOCOL_VERSION = 4;
+    static constexpr uint8_t PROTOCOL_VERSION = 5;
     static constexpr size_t MAX_FRAME = 119;
     static bool recognizes(const uint8_t *data, size_t size);
     static bool encode(const SyncFrame &frame, uint8_t *data, size_t capacity, size_t &size);
@@ -29,6 +29,7 @@ struct HazardSyncStats
     uint32_t sent = 0, received = 0, malformed = 0, ignored = 0;
     uint32_t imported = 0, unchanged = 0, conflicts = 0, rejected = 0;
     uint32_t evidenceImported = 0, evidenceUnchanged = 0;
+    uint32_t retirementPagesImported = 0;
     uint32_t retries = 0, exhausted = 0, queueFull = 0, transportBusy = 0;
 };
 class HazardSync
@@ -66,7 +67,7 @@ private:
     HazardRepository &repository;
     HazardService &service;
     uint32_t node, session, sequence, nextTransmit, nextSummary;
-    size_t summaryCursor, requestCursor, responseCursor;
+    size_t summaryCursor, requestCursor, responseCursor, retirementOffset;
     bool summarizing, started;
     Send send;
     void *context;

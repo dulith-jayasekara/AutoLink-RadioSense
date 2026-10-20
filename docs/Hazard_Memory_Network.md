@@ -13,12 +13,13 @@ The subsystem lives under `src/Hazard Memory Network/`. `src/main.cpp` coordinat
 | Evidence / Groups | Immutable event history, keyed retries and non-destructive candidate groups |
 | Confidence | Derived presence score, latest independent observer votes and time decay |
 | Conflict | Deterministic canonical record selection and terminal protection |
+| Memory | Priority admission, retained terminal history, compact replay protection and atomic reclamation |
 | Sync | LoRa summaries, bounded requests/retries and persistent record/evidence imports |
 | Console | Shared command parser |
 | `Core/LoRa_Transport` | One radio owner with packet dispatch and asynchronous transmission |
 | `Core/WiFi_Console` | Optional HTTP monitor and router setup interface |
 
-Capacity is 16 raw records and 32 observations per node. Snapshot schema 3 reads schemas 1 and 2 without inventing evidence. LoRa synchronization uses protocol version 4; upgrade all communicating nodes together. Protocol 4 requires the shared conflict policy; protocol 3 peers cannot reconcile lower-version winners. Snapshot schema remains 3 and existing records/evidence are retained. Observer IDs and report keys provide identity/deduplication, not authentication.
+Capacity is 16 raw records and 32 observations per node. Snapshot schema 4 reads schemas 1–3 without inventing evidence or retirement markers. LoRa synchronization uses protocol version 5; upgrade all communicating nodes together. Protocol 5 shares compact retirement markers; older peers cannot safely participate. Existing records/evidence migrate on the next successful save. Observer IDs and report keys provide identity/deduplication, not authentication.
 
 ## Configuration and persistence
 
@@ -45,6 +46,9 @@ EVIDENCE <hazard_id>
 LIST
 GROUPS
 MEMORY
+CLEANUP
+RETIRED
+POSITION <phone_lat> <phone_lon>
 SYNC
 HELP
 ```
@@ -86,7 +90,25 @@ This total ordering makes repeated imports idempotent and yields the same winner
 
 Synchronization requests every differing advertised version/digest, including equal and lower versions. Responses must match the advertised version/digest and correlated session/request; a record that changes during transfer is discovered through later summaries. The winner is saved and verified before becoming visible. Losing records cause no write, and immutable evidence from every branch still synchronizes independently. Summary digest collisions retain the existing CRC32 limitation. Conflict counters count detected differences, including differences later reconciled.
 
-`MEMORY` exposes `conflict_policy=1` and `sync_protocol=4`. Upgrade all nodes together before testing. Selection does not count relay copies or confirmation votes as canonical revisions: independent confirmations/contradictions remain in the confidence engine, and cannot automatically reopen a cleared hazard. There is no authentication or verification that a remote terminal marker represents a real clearance.
+`MEMORY` exposes `conflict_policy=1`, `memory_policy=1` and `sync_protocol=5`. Upgrade all nodes together before testing. Selection does not count relay copies or confirmation votes as canonical revisions: independent confirmations/contradictions remain in the confidence engine, and cannot automatically reopen a cleared hazard. There is no authentication or verification that a remote terminal marker represents a real clearance.
+
+## Memory policy
+
+Fixed limits are 16 full records, 32 observations and 64 compact terminal identities. Capacity is checked before ID reservation. With known application UTC, admission can replace a strictly lower-priority ongoing record and reclaim its linked evidence. Equal-priority arrivals do not churn storage. Local copies may legitimately hold different cache subsets under pressure. Updating an existing ID still uses the shared conflict policy.
+
+```text
+priority = severity × 100 + calculated confidence × 2 + freshness + relevance
+freshness = floor(100 × remaining TTL / full TTL), bounded to 0–100
+relevance = floor((5000 − distance metres) / 50) within 5 km, otherwise 0
+```
+
+Relevance defaults to 0. `POSITION` accepts optional application-supplied coordinates used as a local priority focus until reboot or another POSITION command; it does not request GPS, set UTC, persist, or synchronize the focus. Applications should update it as their context changes. Deterministic victim ties prefer the oldest observation, then the larger ID. Terminal records and local keyed observations within the 300-second report acceptance window are pinned. Unknown UTC disables pressure eviction and cleanup. Only observations linked to a chosen victim are removed; unrelated orphan evidence is not silently discarded. When no safe victim exists, admission returns the existing full-capacity result without reserving an ID or writing flash.
+
+Full Resolved/Expired records and linked evidence remain through `expiresAt + 86400 seconds`. Cleanup then replaces them with a 13-byte serialized terminal identity (ID, creation UTC, terminal state). The 64-entry marker table is fixed-size RAM/storage; retired IDs reject records, revisions, votes and evidence even after reboot with unknown UTC. Resolved dominates Expired in marker merges. Marker pages repeat over LoRa with rotated page boundaries, and receiving one atomically retires any matching local record/evidence. This also removes stale copies from reconnecting nodes. A peer's earlier terminal retirement can shorten another node's local full-history retention; identity mismatches are rejected. Retirement pages are unauthenticated like the rest of this prototype protocol.
+
+Markers have no automatic expiry or overwrite policy. When all 64 slots are occupied, further terminal reclamation is deferred and full terminal history stays pinned; `retirement_full=1` reports this condition. This deliberately bounds memory while retaining replay protection. Unbounded deployments still need a reviewed archival/epoch strategy. Ongoing cache evictions are not globally retired and can be admitted again if capacity/priority later permits. Keyed idempotency lasts while evidence is retained; pinned local observations prevent duplicate creation during the accepted report window, and older evicted payloads fail normal age validation.
+
+`CLEANUP` runs the same retention policy explicitly. Normal lifecycle processing batches eligible cleanup with state transitions, and admission batches cleanup, eviction and the accepted mutation into one verified snapshot. Identical commits, repeated cleanup, marker retransmissions and rejected admissions do not write snapshots. Accepted reports/evidence still persist before acknowledgement; there is no unsafe delayed-write buffer. `MEMORY` exposes capacities, `retired_count`, `retirement_full`, retention seconds, per-boot `evicted`/`cleaned` counts and optional position presence. GET/LIST include a local derived `priority`; RETIRED lists markers. The maximum snapshot is 3738 bytes; snapshots without markers retain the original record/evidence layout and schema 4 appends a count plus 13 bytes per marker only when needed.
 
 ## Optional Wi-Fi interface
 
@@ -98,4 +120,4 @@ Set `HAZARD_ENABLE_WIFI_CONSOLE=0` to disable HTTP monitoring. LoRa remains the 
 
 ## Current limitations
 
-Confidence weights are provisional and observer identities are unauthenticated. Retention/eviction policies and the mobile application remain unfinished. Conflict selection uses deterministic prototype rules; it does not establish which physical report is true. Candidate groups preserve independent records instead of destructively merging their history.
+Confidence weights are provisional and observer identities are unauthenticated. The mobile application, long-run hardware measurements and an archival strategy beyond the fixed retirement-marker capacity remain unfinished. Conflict selection uses deterministic prototype rules; it does not establish which physical report is true. Candidate groups preserve independent records instead of destructively merging their history.
