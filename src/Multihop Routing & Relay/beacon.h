@@ -21,10 +21,17 @@ struct BeaconPacket {
     uint32_t timestamp;          // 4 bytes: Unix time in seconds
 };
 
+// Radio measurements belong to this reception and are not transmitted in the
+// beacon payload.
+struct BeaconReceptionInfo {
+    int16_t rssi; // dBm
+    float snr;    // dB
+};
+
 uint16_t generateSequenceNumber();
 void generateBeacon(BeaconPacket &packet);
 bool transmitBeacon(BeaconPacket &packet);
-bool receiveBeacon(BeaconPacket &packet);
+bool receiveBeacon(BeaconPacket &packet, BeaconReceptionInfo &receptionInfo);
 void extractBeaconInformation(const BeaconPacket &packet);
 
 #endif

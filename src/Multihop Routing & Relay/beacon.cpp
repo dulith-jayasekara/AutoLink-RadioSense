@@ -288,6 +288,7 @@ void generateBeacon(BeaconPacket &packet)
         Serial.print(latitude, 7);
         Serial.print(", ");
         Serial.println(longitude, 7);
+        Serial.print("\n\n");
     }
     else
     {
@@ -372,7 +373,7 @@ bool transmitBeacon(BeaconPacket &packet)
 // Returns:
 // true  = a valid beacon was decoded
 // false = no packet was available or the packet was rejected
-bool receiveBeacon(BeaconPacket &packet)
+bool receiveBeacon(BeaconPacket &packet, BeaconReceptionInfo &receptionInfo)
 {
     // Check whether a LoRa packet has arrived.
     // parsePacket() returns 0 when no packet is available.
@@ -433,14 +434,17 @@ bool receiveBeacon(BeaconPacket &packet)
 
     // RSSI indicates the received signal strength.
     // A value closer to zero generally means a stronger signal.
+    receptionInfo.rssi = static_cast<int16_t>(LoRa.packetRssi());
+    receptionInfo.snr = LoRa.packetSnr();
+
     Serial.print("  RSSI: ");
-    Serial.print(LoRa.packetRssi());
+    Serial.print(receptionInfo.rssi);
     Serial.println(" dBm");
 
     // SNR indicates the signal-to-noise ratio.
     // It provides additional information about reception quality.
     Serial.print("  SNR: ");
-    Serial.print(LoRa.packetSnr(), 2);
+    Serial.print(receptionInfo.snr, 2);
     Serial.println(" dB");
 
     // The beacon passed the size and packet-type checks.

@@ -8,7 +8,7 @@
 // --------------------------------------------------
 
 // Set this value to the number of packets to collect before analysis.
-constexpr size_t PREDEFINED_PACKET_COUNT = 10;
+constexpr size_t PREDEFINED_PACKET_COUNT = 50;
 static_assert(PREDEFINED_PACKET_COUNT > 0, "At least one packet must be collected.");
 
 struct PacketRecord

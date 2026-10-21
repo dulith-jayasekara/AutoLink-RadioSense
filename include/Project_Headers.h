@@ -5,4 +5,5 @@
 #include "../src/Core/Wifi_Manager.h"
 #include "../src/Multihop Routing & Relay/beacon.h"
 #include "../src/Core/Captive_Portal.h"
+#include "../src/Multihop Routing & Relay/Neighbour_Table.h"
 #include "Config.h"

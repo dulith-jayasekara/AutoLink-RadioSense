@@ -1,0 +1,822 @@
+# AutoLink RadioSense: Neighbour Management Documentation
+
+# Neighbour Management Functions
+
+Design and Implementation Specification
+
+Document purpose: Define the design, behaviour, data structures,
+algorithms, integration points, and verification plan for the Neighbour
+Management module in the AutoLink RadioSense project.
+
+Status: Design specification for implementation
+Target platform: ESP32 using PlatformIO
+Communication context: LoRa beacon reception using an SX1278/RA-02-class
+radio, subject to confirmation against the project’s current hardware
+and driver configuration.
+
+------------------------------------------------------------------------
+
+1. Introduction
+
+AutoLink RadioSense uses beacon packets to announce the state and
+location of a node. A receiving node needs to remember which other nodes
+it has heard from recently, keep their latest available information,
+estimate communication-link quality, and remove entries that are no
+longer active.
+
+The Neighbour Management module provides this function through a
+Neighbour Table. Each receiving node maintains its own local table. The
+table is not automatically shared with other nodes; it represents the
+neighbours known to that particular receiver.
+
+This document covers four work-breakdown-structure (WBS) items:
+
+1.  Neighbour Table Design
+2.  Neighbour Entry Creation
+3.  Neighbour Entry Updation
+4.  Neighbour Timeout
+
+It also describes packet-delivery-ratio (PDR) estimation, error
+handling, integration with Beacon Management and LoRa reception,
+testing, and recommended implementation order.
+
+2. Objectives
+
+The module should:
+
+-   Store a bounded list of recently heard neighbour nodes.
+-   Identify each neighbour using its six-byte Node ID (the ESP32 Wi-Fi
+    MAC address carried in the beacon).
+-   Create an entry when a valid beacon is received from an unknown
+    node.
+-   Update the existing entry when another valid beacon arrives from a
+    known node.
+-   Store the latest location, heading, speed, reception time, RSSI, and
+    SNR where the radio driver provides those measurements.
+-   Estimate PDR using a clearly defined packet-counting method.
+-   Expire stale entries after a configurable period without a valid
+    beacon.
+-   Provide a clean interface for the routing module to inspect the
+    current neighbours.
+-   Keep the main.cpp file focused on calling module functions rather
+    than containing the implementation logic.
+
+3. Scope and assumptions
+
+3.1 In scope
+
+-   In-memory neighbour table on each ESP32.
+-   Entry lookup, creation, and update.
+-   Reception timestamping using the receiver’s local monotonic clock.
+-   RSSI and SNR storage, if available from the radio driver.
+-   Basic PDR estimation using beacon sequence numbers and reception
+    statistics.
+-   Periodic expiry of stale entries.
+-   Serial output for development and testing.
+
+3.2 Out of scope for the first version
+
+-   A complete multi-hop routing algorithm.
+-   Persistent storage across resets.
+-   Cryptographic authentication of beacon senders.
+-   A distributed, globally consistent neighbour database.
+-   Guaranteed PDR measurement when the sender’s transmission count is
+    unknown.
+-   Treating RSSI or SNR as proof that a link is reliable.
+
+3.3 Hardware and interface assumptions
+
+This specification assumes that beacon packets are received over LoRa
+using an SX1278/RA-02-class radio. Confirm this against the actual board
+and current code before implementation. The module should not hard-code
+assumptions about a particular LoRa library.
+
+The receive layer should provide: - The raw or decoded beacon packet. -
+RSSI for the received packet, if supported by the driver. - SNR for the
+received packet, if supported by the driver.
+
+For LoRa, RSSI and SNR are reception measurements. They should normally
+be read from the receiver/driver and should not be treated as
+sender-supplied beacon fields. Wi-Fi RSSI APIs are not a substitute for
+LoRa radio measurements.
+
+The exact packet fields and units must match the project’s existing
+BeaconPacket definition. The earlier design uses integer-scaled GPS
+coordinates and includes a sequence number. Before implementation,
+inspect the current source to confirm every field, unit, packet length,
+and sequence-number type.
+
+4. WBS mapping
+
+  -----------------------------------------------------------------------
+  WBS item                Responsibility          Main result
+  ----------------------- ----------------------- -----------------------
+  Neighbour Table Design  Define the entry        A consistent table data
+                          fields, data types,     model
+                          capacity, units, and    
+                          expiry policy           
+
+  Neighbour Entry         Insert a record for a   One new neighbour entry
+  Creation                valid beacon from a     
+                          previously unknown Node 
+                          ID                      
+
+  Neighbour Entry         Refresh the matching    Current neighbour data
+  Updation                entry from a new valid  without duplicates
+                          beacon                  
+
+  Neighbour Timeout       Delete entries that     A table containing only
+                          have not been refreshed recently heard
+                          within the configured   neighbours
+                          timeout                 
+  -----------------------------------------------------------------------
+
+PDR calculation and Serial Monitor diagnostics support these four
+functions.
+
+5. Neighbour Table design
+
+5.1 Proposed entry fields
+
+  -----------------------------------------------------------------------
+  Field                   Suggested type          Meaning and source
+  ----------------------- ----------------------- -----------------------
+  nodeID[6]               uint8_t[6]              Unique key from the
+                                                  beacon’s six-byte Node
+                                                  ID
+
+  lastSeenMs              uint32_t                Local millis() value
+                                                  when the last valid
+                                                  beacon was accepted
+
+  rssiDbm                 int16_t                 Latest packet RSSI in
+                                                  dBm, from the LoRa
+                                                  driver
+
+  snrDb                   float or scaled integer Latest packet SNR in
+                                                  dB, from the LoRa
+                                                  driver, if available
+
+  latitude                int32_t                 Latitude encoded
+                                                  according to the
+                                                  existing beacon format
+
+  longitude               int32_t                 Longitude encoded
+                                                  according to the
+                                                  existing beacon format
+
+  heading                 uint16_t or existing    Heading using the exact
+                          packet type             scale in the existing
+                                                  beacon format
+
+  speed                   uint16_t or existing    Speed using the exact
+                          packet type             unit in the existing
+                                                  beacon format
+
+  lastSequence            Existing sequence type  Last accepted sequence
+                                                  number from this
+                                                  neighbour
+
+  packetsReceived         uint32_t                Number of valid, newly
+                                                  processed beacon
+                                                  packets counted by the
+                                                  estimator
+
+  packetsLost             uint32_t                Estimated missing
+                                                  sequence numbers under
+                                                  the selected estimator
+
+  pdrPercent              float                   Estimated PDR
+                                                  percentage
+
+  pdrAvailable            bool                    Whether enough valid
+                                                  data exists to report
+                                                  PDR
+  -----------------------------------------------------------------------
+
+These are proposed names and types. Match them to the existing code and
+avoid unnecessary conversions. For example, if the beacon stores
+latitude and longitude as signed integers scaled by 10^7, keep those
+integers in the neighbour table. Convert to decimal degrees only for
+display or calculations that require it.
+
+5.2 Capacity
+
+Use a fixed-size array for the initial prototype, for example
+MAX_NEIGHBOURS = 20. A fixed-size array is straightforward on an ESP32,
+has predictable memory use, and avoids dynamic-allocation complexity.
+
+The capacity is a design parameter, not a claim that 20 neighbours is
+always sufficient. Choose it based on expected node density and
+available memory. When the table is full and a new Node ID arrives, the
+implementation must have an explicit policy. For the first version,
+reject the new entry and report a table-full diagnostic. Do not silently
+overwrite an active neighbour. A later version could evict the oldest
+entry or the weakest/least useful entry, but that should be a documented
+policy.
+
+5.3 Node ID comparison
+
+Compare all six bytes of the MAC address. Do not compare formatted MAC
+strings because that adds formatting overhead and creates opportunities
+for string errors.
+
+Conceptually:
+
+    bool sameNodeID(const uint8_t a[6], const uint8_t b[6])
+    {
+        for (uint8_t i = 0; i < 6; ++i)
+        {
+            if (a[i] != b[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+This helper can remain private to NeighborTable.cpp.
+
+5.4 Time source
+
+Use the receiving ESP32’s local millis() clock for lastSeenMs. This is a
+monotonic elapsed-time counter and does not require the sender’s phone
+timestamp or clocks to be synchronized.
+
+Do not use the timestamp embedded in a beacon to decide whether a
+neighbour has timed out. The timeout asks when this receiver last heard
+a valid beacon, not when the sender says the beacon was generated.
+
+Elapsed-time checks should use unsigned subtraction to handle millis()
+wraparound:
+
+    uint32_t elapsedMs = (uint32_t)(millis() - entry.lastSeenMs);
+
+    if (elapsedMs >= NEIGHBOUR_TIMEOUT_MS)
+    {
+        // The entry has expired.
+    }
+
+Avoid comparing millis() to lastSeenMs + timeout, which is less robust
+around counter rollover.
+
+6. Module boundaries and software architecture
+
+Keep Neighbour Management independent of the details of packet
+reception.
+
+Recommended responsibilities:
+
+-   Beacon Management: Validates and decodes the beacon format and
+    exposes its fields.
+-   LoRa receive/driver layer: Receives packets and reports radio
+    metadata such as RSSI and SNR when available.
+-   Neighbour Management: Finds, creates, updates, expires, and reports
+    neighbour entries.
+-   Multihop Routing: Reads the neighbour table through a public
+    interface and decides how to route traffic.
+-   main.cpp: Coordinates calls to the modules.
+
+A possible file arrangement is:
+
+    include/
+        NeighborTable.h
+
+    src/
+        main.cpp
+        novelty_1/
+            Beacon.h
+            Beacon.cpp
+        core/
+            LoRa_Manager.h
+            LoRa_Manager.cpp
+        neighbour_management/
+            NeighborTable.cpp
+
+This is illustrative only. Preserve the current project’s folder layout
+if it already has an established structure.
+
+6.1 Suggested public interface
+
+The public header should expose a small interface, such as:
+
+-   initializeNeighbourTable()
+-   addOrUpdateNeighbour(...)
+-   removeExpiredNeighbours()
+-   getNeighbour(...)
+-   getNeighbourCount()
+-   printNeighbourTable()
+
+The parameter types for addOrUpdateNeighbour() should use the project’s
+actual decoded beacon type and a separate radio-metadata structure where
+possible. Avoid making the neighbour table parse raw packet bytes
+itself.
+
+For safety, getters should not expose mutable internal storage unless
+there is a clear reason. A copy-out function or read-only access pattern
+reduces the chance that routing code accidentally corrupts the table.
+
+7. Neighbour Entry Creation
+
+7.1 Trigger
+
+Entry creation is triggered when the receiver accepts a valid beacon
+whose Node ID is not already in the table.
+
+7.2 Processing sequence
+
+1.  Receive the packet from the LoRa driver.
+2.  Check packet length and packet type.
+3.  Decode the beacon and validate fields as required by the existing
+    protocol.
+4.  Obtain RSSI and SNR from the radio driver if available.
+5.  Search the neighbour table using the six-byte Node ID.
+6.  If no matching entry exists, find an unused table slot.
+7.  Initialize every field in the new entry.
+8.  Copy the Node ID, location, heading, speed, sequence number, and
+    radio metadata.
+9.  Set lastSeenMs = millis().
+10. Initialize PDR tracking state. Do not report a confident PDR from a
+    single packet.
+11. Increment the active neighbour count and optionally log the
+    creation.
+
+7.3 Initialization rules
+
+All fields must be initialized. Do not leave uninitialized values in the
+table. If a measurement is unavailable, represent that explicitly using
+a validity flag or documented sentinel rather than presenting an
+arbitrary number as real data.
+
+A newly created entry should have: - A valid Node ID. - The latest valid
+beacon values. - The local receive time. - RSSI/SNR validity according
+to the driver. - Sequence-tracking state initialized from the first
+accepted sequence number. - PDR marked unavailable until enough
+reception history exists.
+
+7.4 Full-table behaviour
+
+If no free slot exists, do not write beyond the array. Return a status
+such as TABLE_FULL and print a diagnostic during development. The policy
+for making room should be added only after it has been specified and
+tested.
+
+8. Neighbour Entry Updation
+
+8.1 Trigger
+
+Update an entry when a valid beacon is received from a Node ID already
+present in the table.
+
+8.2 Fields to update
+
+For a newly accepted beacon, update: - lastSeenMs using the local
+receive time. - Latitude and longitude. - Heading and speed. - RSSI and
+SNR, if available. - Sequence tracking and PDR statistics.
+
+The Node ID is the lookup key and normally does not change. Do not
+create a second entry for the same six-byte Node ID.
+
+8.3 Sequence-number handling
+
+Sequence numbers help identify likely missing beacons, but they need
+careful handling:
+
+-   Ignore or classify duplicate packets so they do not count as new
+    successful deliveries.
+-   Handle out-of-order packets without incorrectly counting them as
+    fresh sequence progress.
+-   Handle sequence-number rollover according to the sequence field’s
+    width.
+-   Consider sender restarts, where the sequence number may reset.
+-   Decide whether a repeated or stale sequence should refresh
+    lastSeenMs. A conservative first design is to refresh the timestamp
+    only for a valid packet accepted as a new reception event, while
+    separately recording duplicates or malformed traffic.
+
+If the protocol uses a 16-bit sequence number, rollover occurs from
+65535 back to 0. The implementation must use defined modular arithmetic
+or an explicitly tested comparison helper. Do not assume that every
+larger numerical value is newer.
+
+8.4 Avoiding duplicates
+
+Every valid received beacon should follow the same decision path: 1.
+Find the Node ID. 2. If it exists, update the matching record. 3.
+Otherwise, create a record if a free slot exists. 4. If no slot exists,
+return a clear failure status.
+
+This rule guarantees at most one entry per Node ID in the table,
+provided all creation goes through this function.
+
+9. Packet Delivery Ratio (PDR)
+
+9.1 Definition
+
+PDR is the ratio of packets successfully received to packets expected or
+transmitted over a defined observation period:
+
+PDR (%) = (received packets / expected packets) × 100
+
+PDR is not the same as RSSI or SNR. RSSI and SNR describe aspects of
+received signal quality; PDR describes delivery success over a sequence
+of packet opportunities.
+
+9.2 Estimation using sequence numbers
+
+If a sender transmits sequentially numbered beacons, the receiver can
+estimate missing packets from gaps in sequence numbers. For example,
+observing 10, 11, 12, 15, and 16 suggests that sequence numbers 13 and
+14 were missed, assuming there were no sender restarts, duplicates, or
+out-of-order delivery.
+
+Across sequence numbers 10 through 16: - Expected sequence positions:
+7 - Received unique sequence numbers in the interval: 5 - Estimated PDR:
+5 / 7 × 100 = 71.43%
+
+This is a simple illustrative estimate. It is not universally accurate
+if the receiver starts listening partway through a sender’s sequence,
+packets arrive out of order, a sender restarts, or multiple transmission
+opportunities cannot be inferred.
+
+9.3 Recommended first implementation
+
+Maintain per-neighbour reception statistics and define precisely what
+the counters mean. At minimum: - Count valid, unique beacon
+receptions. - Track the last accepted sequence number. - Estimate gaps
+only when the sequence progression is unambiguous. - Avoid treating
+duplicates as additional delivered packets. - Mark PDR unavailable when
+there is insufficient history. - Reset or re-baseline the estimator if a
+sender restart is detected.
+
+For a more reliable research measurement, use a fixed observation window
+and define the expected packet count. If the receiver cannot know the
+number of packets the sender transmitted, describe the result as a
+sequence-gap-based estimated PDR, not an exact delivery ratio.
+
+9.4 Counter limitations
+
+A simple cumulative packetsReceived and packetsLost design can be useful
+for a prototype but may need correction when duplicates, reordering, or
+sequence wraparound occur. A sliding window is often better for changing
+links because it responds to recent performance rather than averaging
+the entire history indefinitely. Document the chosen estimator and use
+the same method for all tests.
+
+10. Neighbour Timeout
+
+10.1 Purpose
+
+A neighbour should be removed when no accepted beacon has been heard
+from it for a configured period. This keeps the table useful for routing
+and prevents entries from remaining indefinitely after a node moves
+away, loses power, or stops transmitting.
+
+10.2 Selecting the timeout
+
+Let: - T_beacon be the configured beacon transmission interval. - K be
+the number of missed beacon intervals tolerated.
+
+A simple initial policy is:
+
+NEIGHBOUR_TIMEOUT_MS = K × T_beacon_ms
+
+For an initial experiment, K = 5 is a reasonable starting point, not a
+universal standard. For example:
+
+    Beacon interval   Example timeout using K = 5
+  ----------------- -----------------------------
+             500 ms                       2500 ms
+            1000 ms                       5000 ms
+            2000 ms                      10000 ms
+
+Choose the final timeout through testing. A shorter timeout removes
+stale neighbours sooner but can remove a valid neighbour during
+temporary packet loss. A longer timeout tolerates loss but keeps stale
+records for longer.
+
+10.3 Expiry algorithm
+
+1.  Run removeExpiredNeighbours() periodically.
+2.  For every active entry, compute unsigned elapsed time from
+    lastSeenMs.
+3.  If elapsed time is greater than or equal to the configured timeout,
+    mark the entry expired.
+4.  Remove the entry safely.
+5.  Update the active entry count.
+6.  Optionally print a removal diagnostic with the Node ID and elapsed
+    time.
+
+When removing an entry from a fixed-size array, either shift later
+entries down and adjust the count, or mark slots as unused. Choose one
+representation and apply it consistently. If entries are shifted, do not
+increment the loop index after a removal because the next entry has
+moved into the current index.
+
+10.4 Timeout and PDR
+
+Do not treat timeout as a lost packet by itself unless the PDR estimator
+has a defined expected-transmission schedule and the observation window
+justifies that conclusion. Timeout means the neighbour has not recently
+been heard from; it does not, on its own, prove why communication
+stopped.
+
+11. Suggested implementation pseudocode
+
+11.1 Receive and process a beacon
+
+    onBeaconReceived(packet, radioMetadata):
+        validate packet
+        decode beacon
+        obtain RSSI/SNR if available
+
+        entry = findNeighbour(beacon.nodeID)
+
+        if entry exists:
+            validate sequence progression
+            update entry fields
+            update reception statistics
+            refresh lastSeenMs for an accepted reception
+            return UPDATED
+
+        if free table slot exists:
+            initialize new entry
+            initialize sequence/PDR state
+            store entry
+            return CREATED
+
+        return TABLE_FULL
+
+11.2 Remove expired entries
+
+    removeExpiredNeighbours():
+        now = millis()
+
+        for each active entry:
+            elapsed = unsigned(now - entry.lastSeenMs)
+
+            if elapsed >= NEIGHBOUR_TIMEOUT_MS:
+                remove entry safely
+                report removal if diagnostics are enabled
+
+11.3 Main loop integration
+
+    setup():
+        initialize serial output
+        initialize LoRa receiver
+        initialize neighbour table
+
+    loop():
+        if a beacon packet is available:
+            receive packet and radio metadata
+            decode and validate beacon
+            call addOrUpdateNeighbour(...)
+
+        periodically:
+            call removeExpiredNeighbours()
+
+        allow routing module to read the current table
+
+This pseudocode describes responsibilities, not a drop-in
+implementation. Adapt the calls to the current project’s actual LoRa
+driver and Beacon Management interfaces.
+
+12. Error handling and edge cases
+
+The implementation should explicitly handle:
+
+-   Invalid packet length or unsupported packet type.
+-   Malformed or out-of-range GPS fields, according to the protocol’s
+    validation rules.
+-   Unknown or unsupported measurement values.
+-   Duplicate beacon sequence numbers.
+-   Out-of-order packets.
+-   Sequence-number rollover.
+-   Sender restart or sequence reset.
+-   Table-full condition.
+-   Expired entries.
+-   millis() rollover.
+-   Missing RSSI/SNR support in the selected driver.
+-   Self-beacons, if a node could receive its own broadcast. Normally,
+    do not create a neighbour entry for the local Node ID.
+-   Concurrent access, if receive processing and table reads occur in
+    different tasks. Protect the table with a suitable critical section
+    or mutex if required by the actual execution model.
+
+Reject malformed packets before they can create or refresh entries. Do
+not allow an invalid packet to corrupt an existing record.
+
+13. Debugging and Serial Monitor output
+
+For development, printNeighbourTable() should show: - Active neighbour
+count and table capacity. - Node ID in readable MAC format. - Age or
+last-seen elapsed time. - RSSI and SNR, including whether they are
+available. - GPS coordinates in readable degrees, if useful. - Heading
+and speed with clearly labelled units. - PDR and whether it is
+available. - Sequence/reception statistics if needed for debugging.
+
+Use a consistent log format. Avoid printing every field on every loop
+iteration; print on creation, meaningful updates when required, timeout,
+or on a manual diagnostic request. Excessive serial output can interfere
+with timing and make test results harder to interpret.
+
+14. Verification and testing plan
+
+Test each WBS item separately before running an end-to-end multi-node
+experiment.
+
+Test 1: Initialization
+
+-   Start the ESP32.
+-   Initialize the table.
+-   Confirm the active count is zero.
+-   Print the table and confirm that no uninitialized entry is presented
+    as a neighbour.
+
+Expected result: Empty table with a valid count.
+
+Test 2: Entry creation
+
+-   Transmit a valid beacon from a second node.
+-   Confirm that the receiver creates one entry.
+-   Confirm the Node ID and beacon fields match the transmitted values.
+-   Confirm local lastSeenMs is recorded.
+-   Confirm RSSI/SNR are recorded only when the driver supplies valid
+    measurements.
+
+Expected result: Exactly one correctly initialized entry.
+
+Test 3: Entry update
+
+-   Transmit several beacons from the same node with updated position,
+    heading, or speed.
+-   Confirm that the existing entry changes.
+-   Confirm that the table count remains unchanged.
+-   Confirm that no duplicate Node ID is created.
+
+Expected result: One entry whose fields reflect the latest accepted
+beacon.
+
+Test 4: Multiple neighbours
+
+-   Transmit from two or more distinct nodes.
+-   Confirm each has a separate entry.
+-   Confirm updates for one node do not modify another node’s data.
+
+Expected result: Correctly separated records.
+
+Test 5: PDR sequence gap
+
+-   Send a controlled sequence of beacons with known sequence numbers.
+-   Deliberately omit selected sequence numbers if the test setup
+    permits.
+-   Check that the estimator counts gaps according to the documented
+    rules.
+-   Repeat with duplicates, out-of-order packets, and sequence rollover.
+
+Expected result: Consistent PDR statistics, with limitations documented.
+
+Test 6: Timeout
+
+-   Receive a beacon and record the entry.
+-   Stop the transmitter.
+-   Wait longer than the configured timeout.
+-   Run the expiry function and inspect the table.
+
+Expected result: The stale entry is removed, and the active count is
+correct.
+
+Test 7: Table capacity
+
+-   Present more unique nodes than the configured capacity.
+-   Confirm that no write occurs beyond the array.
+-   Confirm that the selected full-table policy is applied and logged.
+
+Expected result: Safe, explicit handling of capacity limits.
+
+Test 8: millis() arithmetic and repeated operation
+
+-   Unit-test elapsed-time logic around simulated wraparound if
+    feasible.
+-   Repeatedly create, update, and expire entries.
+-   Confirm no stale entries, count mismatches, or array-bound errors
+    accumulate.
+
+Expected result: Stable behaviour over repeated operations.
+
+Test 9: End-to-end integration
+
+-   Run two or more ESP32 nodes.
+-   Confirm received beacons create and update entries.
+-   Confirm routing can read the table.
+-   Confirm inactive nodes eventually disappear.
+
+Expected result: Neighbour Management works with the real beacon and
+radio interfaces.
+
+15. Performance considerations
+
+A fixed array of 20 entries is generally small for an ESP32. Searching
+it linearly is straightforward and is likely adequate for an initial
+prototype. The approximate lookup cost grows linearly with the number of
+entries, which is acceptable for a modest table.
+
+Potential improvements for later versions: - Configurable table
+capacity. - A more efficient lookup structure for larger networks. - A
+sliding-window PDR estimator. - A documented replacement policy for a
+full table. - Separate validity flags for radio measurements. - Link
+stability or neighbour-quality scoring, if justified by the routing
+algorithm. - Thread-safe access if multiple FreeRTOS tasks access the
+table.
+
+Do not add complexity before the simple implementation has been tested.
+The first goal is correct behaviour, not an elaborate collection of
+abstractions.
+
+16. Implementation checklist
+
+Neighbour Table Design
+
+-   ☐ Confirm the existing beacon structure and units.
+-   ☐ Define the table entry and maximum capacity.
+-   ☐ Define how unavailable measurements are represented.
+-   ☐ Define the timeout policy and beacon interval.
+-   ☐ Define the PDR estimator.
+
+Neighbour Entry Creation
+
+-   ☐ Validate and decode incoming beacons before table insertion.
+-   ☐ Search by six-byte Node ID.
+-   ☐ Initialize all entry fields.
+-   ☐ Initialize sequence and PDR state.
+-   ☐ Handle table-full and self-beacon cases.
+
+Neighbour Entry Updation
+
+-   ☐ Update the matching record without duplication.
+-   ☐ Refresh location, heading, speed, radio metadata, and local
+    reception time.
+-   ☐ Handle duplicate and out-of-order sequence numbers.
+-   ☐ Handle rollover and sender restarts.
+-   ☐ Update PDR according to the documented estimator.
+
+Neighbour Timeout
+
+-   ☐ Run expiry checks periodically without blocking reception.
+-   ☐ Use unsigned elapsed-time subtraction.
+-   ☐ Remove entries safely and maintain the correct count.
+-   ☐ Test timeout against the actual beacon interval.
+-   ☐ Confirm stale neighbours are no longer offered to routing.
+
+Integration and verification
+
+-   ☐ Keep packet parsing in Beacon Management.
+-   ☐ Keep radio metadata retrieval in the LoRa receive layer.
+-   ☐ Keep neighbour-table logic in its own module.
+-   ☐ Keep main.cpp limited to initialization and orchestration.
+-   ☐ Verify behaviour through controlled Serial Monitor tests.
+
+17. Decisions to confirm before coding
+
+The following details must be confirmed from the current source before
+turning this specification into compiling code:
+
+1.  The exact BeaconPacket field names, field widths, packing, and
+    units.
+2.  The exact LoRa library and how it reports packet RSSI and SNR.
+3.  The configured beacon transmission interval.
+4.  The desired maximum number of neighbours.
+5.  The sequence-number type and whether the sender resets it after
+    reboot.
+6.  Whether reception is handled in the main loop or a separate FreeRTOS
+    task.
+7.  The intended PDR definition: cumulative sequence-gap estimate, fixed
+    observation window, or sliding window.
+
+These are integration details, not reasons to postpone the design. They
+prevent the neighbour module from duplicating existing code or silently
+interpreting data in the wrong units.
+
+18. Conclusion
+
+Neighbour Management gives each AutoLink RadioSense node a current local
+view of the other nodes it can hear. The table is created and maintained
+from validated beacons, refreshed by later receptions, enriched with
+radio measurements, and cleaned up through a timeout mechanism.
+
+The recommended implementation order is:
+
+1.  Define the entry structure and table capacity.
+2.  Implement Node ID lookup.
+3.  Implement entry creation.
+4.  Implement entry updating.
+5.  Add sequence-aware PDR estimation.
+6.  Add periodic timeout removal.
+7.  Integrate with the existing beacon and LoRa modules.
+8.  Verify each function with controlled tests before evaluating the routing algorithm.
+
+A correct, well-tested neighbour table is a foundation for multihop
+routing. Its measurements and expiry rules should be explicit and
+reproducible so that the project’s behaviour can be explained and
+evaluated in a technical report.
