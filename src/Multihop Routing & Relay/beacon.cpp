@@ -1,4 +1,6 @@
 #include "beacon.h"
+#include "../Core/Time_Manager.h"
+#include "../Core/Captive_Portal.h"
 
 // Anonymous namespace:
 // These variables and helper functions are private to this .cpp file.
@@ -245,9 +247,17 @@ namespace
         Serial.print(packet.heading);
         Serial.println(" degrees");
 
-        // Display the Unix timestamp.
-        Serial.print("  Timestamp: ");
-        Serial.println(packet.timestamp);
+        // The packet stores Unix time in seconds; zero means the sender's
+        // clock had not been synchronized when this beacon was created.
+        Serial.print("  Timestamp (Unix seconds): ");
+        if (packet.timestamp == 0)
+        {
+            Serial.println("not synchronized (0)");
+        }
+        else
+        {
+            Serial.println(packet.timestamp);
+        }
     }
 }
 
@@ -268,11 +278,28 @@ void generateBeacon(BeaconPacket &packet)
 {
     packet.packetType = BEACON_PACKET_TYPE;
     WiFi.macAddress(packet.nodeID);
-    packet.latitude = 0;
-    packet.longitude = 0;
+    double latitude = 0.0;
+    double longitude = 0.0;
+    if (CaptivePortal_GetLocation(latitude, longitude))
+    {
+        packet.latitude = static_cast<int32_t>(latitude * 10000000.0);
+        packet.longitude = static_cast<int32_t>(longitude * 10000000.0);
+        Serial.print("Using phone location for beacon: ");
+        Serial.print(latitude, 7);
+        Serial.print(", ");
+        Serial.println(longitude, 7);
+    }
+    else
+    {
+        packet.latitude = 0;
+        packet.longitude = 0;
+        Serial.println("No phone location available; beacon coordinates are zero.");
+    }
     packet.speed = 0;
     packet.heading = 0;
-    packet.timestamp = 0;
+    // Keep using the packet's existing four-byte seconds field. Zero is the
+    // established invalid marker while this node waits for phone time.
+    packet.timestamp = Time_GetCurrentTimestamp();
 }
 
 

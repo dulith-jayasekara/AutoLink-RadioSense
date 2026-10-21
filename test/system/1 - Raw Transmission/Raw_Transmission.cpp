@@ -9,7 +9,7 @@
 // AutoLink RadioSense
 // --------------------------------------------------
 
-const char* TEST_MESSAGE = "Hello from AutoLink RadioSense!";
+const char* TEST_MESSAGE = "BUDDHI MARILA YAKOOOO!";
 unsigned long packetNumber = 0;
 
 void setup()

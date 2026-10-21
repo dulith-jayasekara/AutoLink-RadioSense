@@ -1,6 +1,7 @@
 #include "Project_Headers.h"
 #include "Library_Headers.h"
 #include "Config.h"
+#include "Core/Time_Manager.h"
 
 
 HazardRepository hazardRepository;
@@ -12,11 +13,15 @@ void setup()
     Serial.begin(SERIAL_BAUD_RATE);
     delay(START_DELAY);
 
+    // Time is invalid after every restart until a phone synchronizes it.
+    Time_Initialization();
+
     // Initialize LoRa module
     LoRa_Initialization();
 
     // Initialize Wi-Fi connectivity
     WiFi_Initialization();
+    CaptivePortal_Initialization();
 
     // Temporary first-step demonstration: store and retrieve one RAM record.
     const HazardRecord sampleHazard = {
@@ -54,6 +59,10 @@ void setup()
 
 
 void loop() {
+    // Process phone requests before generating a beacon so a newly received
+    // location is available to the next scheduled transmission.
+    CaptivePortal_HandleClient();
+
     // Keep this packet between loop iterations so its fields can be reused for each send.
     static BeaconPacket outgoingBeacon = {};
     static uint32_t lastBeaconTransmit = 0;

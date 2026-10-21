@@ -1,10 +1,16 @@
 #pragma once
 
+//Basic Functionalities
 #include <Arduino.h>
 #include <SPI.h>
 #include <LoRa.h>
+
+//C programming
 #include <math.h>
 #include <cmath>
 #include <stdint.h>
-#include <WiFi.h>
 #include <stdint.h>
+
+//Wifi Functionalities
+#include <WiFi.h>
+#include <DNSServer.h>

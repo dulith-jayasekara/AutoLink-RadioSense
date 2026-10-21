@@ -1,0 +1,44 @@
+# AutoLink RadioSense: Beacon Packet Documentation
+
+## 1. Beacon Packet Definition
+
+The beacon packet is a structured binary message transmitted by each vehicle node using the SX1278 LoRa module. It carries vehicle identification and position-related information to support neighbour discovery and multi-hop routing.
+
+The agreed packet format uses a fixed-length, 25-byte binary structure.
+
+| Field               | Data type    | Size     |
+| ------------------- | ------------ | -------- |
+| Packet Type         | `uint8_t`    | 1 byte   |
+| Node ID (ESP32 MAC) | `uint8_t[6]` | 6 bytes  |
+| Sequence Number     | `uint16_t`   | 2 bytes  |
+| Latitude            | `int32_t`    | 4 bytes  |
+| Longitude           | `int32_t`    | 4 bytes  |
+| Speed               | `uint16_t`   | 2 bytes  |
+| Heading             | `uint16_t`   | 2 bytes  |
+| Timestamp           | `uint32_t`   | 4 bytes  |
+| Total               |              | 25 bytes |
+
+Latitude and longitude are scaled by \\(10^7\\), speed is represented in centimetres per second, and heading is represented in tenths of a degree. The timestamp uses 4 bytes.
+
+## 2. Beacon Implementation
+
+The beacon functionality is implemented using `beacon.h` and `beacon.cpp`, separating the function declarations from their implementations.
+
+- Packet definition: Defines the beacon structure and its fields.
+- Beacon generation: Collects the node's current identification and vehicle data, then constructs the beacon packet.
+- Beacon transmission: Serialises the packet into bytes and transmits it through the LoRa module.
+- Beacon reception: Detects incoming LoRa packets, reads their payloads, and reconstructs the beacon data for processing.
+
+## 3. Beacon Transmission
+
+The transmitting node generates a beacon using its current vehicle information and sends the encoded 25-byte packet through the SX1278 module.
+
+Each beacon includes a sequence number to distinguish successive packets. Periodic transmission allows nearby nodes to discover the transmitting node and update their neighbour information.
+
+## 4. Beacon Reception
+
+When a node receives a LoRa packet, it reads the payload and checks whether its size and packet type match the expected beacon format. Valid packets are decoded to retrieve the sender's Node ID, GPS coordinates, speed, heading, sequence number, and timestamp.
+
+The decoded information can then be used by the neighbour-management and link-quality modules for subsequent multi-hop relay decisions.
+
+Note: This documents the agreed packet format and intended module responsibilities. The exact function names, validation behaviour, and byte-encoding implementation should be checked against your current `beacon.h` and `beacon.cpp` files before treating this as a code-verified specification.
