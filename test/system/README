@@ -96,3 +96,15 @@ The initial LoRa tests may use simple raw payloads without application-level pac
 System-level testing verifies the behavior of the integrated system and physical hardware. It complements unit testing by identifying issues that may only appear when multiple components operate together.
 
 The results obtained from system-level testing will be used to validate the functionality, reliability, and communication performance of the AutoLink RadioSense system.
+
+## Saving Serial Output
+
+Use `capture_serial.ps1` to save a timestamped copy of a system test's serial output on the computer. The script creates the project-root `logs/` directory if needed and writes one log file per capture session. Each received line is prefixed with the computer's local date and time.
+
+Close any other serial monitor using the same port, then run this command from the project root, replacing the port and test name as needed:
+
+```powershell
+.\test\system\capture_serial.ps1 -Port COM3 -BaudRate 115200 -TestName Raw_Reception
+```
+
+The baud rate defaults to `115200`. Start the capture before resetting or starting the board so startup output is included. Stop a capture with `Ctrl+C`; this also saves any final partial line and closes the serial port. Each capture creates a separate file such as `logs/Raw_Reception_20261019_120000_123.log`.

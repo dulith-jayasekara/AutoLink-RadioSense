@@ -1,6 +1,6 @@
 #include "Hazard_Record.h"
+#include "Library_Headers.h"
 
-#include <cmath>
 
 bool isValidHazardRecord(const HazardRecord &record)
 {
@@ -24,3 +24,6 @@ bool isValidHazardRecord(const HazardRecord &record)
            record.confidence <= 100 &&
            validStatus;
 }
+
+
+
