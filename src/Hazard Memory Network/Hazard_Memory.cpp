@@ -26,12 +26,9 @@ size_t HazardMemory::cleanup(HazardRepository &repo, uint32_t now)
     for (size_t i = 0; i < repo.count();)
     {
         HazardRecord r; repo.getAt(i, r);
-        const HazardStatus state = HazardLifecycle::evaluate(r, now);
-        // Subtraction avoids overflow near the end of the UTC range. The full
-        // terminal history is retained through expiry plus one day.
-        if ((state == HazardStatus::Resolved || state == HazardStatus::Expired) &&
-            now >= r.expiresAt && now - r.expiresAt >= RETENTION_SECONDS &&
-            repo.retire(HazardRetirement{r.id, r.createdAt, state})) ++removed;
+        const HazardRetentionView view = HazardRetention::evaluate(repo, r, now);
+        if (view.phase == RetentionPhase::Eligible &&
+            repo.retire(HazardRetirement{r.id, r.createdAt, view.terminalStatus})) ++removed;
         else ++i;
     }
     return removed;

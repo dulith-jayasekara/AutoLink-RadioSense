@@ -528,6 +528,39 @@ void testRetirementSyncAndReconnect()
     std::cout << "PASS: terminal retirement pages converge under loss/reordering, remove disconnected stale copies, survive reboot, reject replay, and page all 64 markers without repeated writes.\n";
 }
 
+void testArchivedExpiryLearnsClearance()
+{
+    Node a(7), b(8), c(9); const HazardId id = a.seed();
+    const HazardRecord original = *a.repo.findById(id);
+    assert(c.service.importRemote(original) == HazardResult::Ok);
+    assert(b.repo.retire(HazardRetirement{id, original.createdAt, HazardStatus::Expired}) && b.storage.save(b.repo));
+    assert(a.service.resolve(id, NOW + 1, NOW + 1, 700) == HazardResult::Ok);
+    const Packet advertised = pack(summary(a, *a.repo.findById(id)));
+    b.sync.receive(advertised.data(), advertised.size(), 0); b.sync.tick(0); b.sync.tick(2000);
+    bool requested = false;
+    for (const Packet &packet : b.outgoing)
+    {
+        SyncFrame frame; assert(HazardSyncCodec::decode(packet.data(), packet.size(), frame));
+        if (frame.type == SyncType::Request) { a.sync.receive(packet.data(), packet.size(), 2000); requested = true; }
+    }
+    assert(requested); b.outgoing.clear();
+    const size_t writes = b.backend.writes;
+    a.sync.tick(0); a.sync.tick(2000); bool received = false;
+    for (const Packet &packet : a.outgoing)
+    {
+        SyncFrame frame; assert(HazardSyncCodec::decode(packet.data(), packet.size(), frame));
+        if (frame.type == SyncType::Update) { b.sync.receive(packet.data(), packet.size(), 2000); received = true; }
+    }
+    assert(received && b.repo.findRetirement(id)->status == HazardStatus::Resolved);
+    assert(!b.repo.count() && !b.repo.observationCount() && b.backend.writes == writes + 1);
+    a.outgoing.clear();
+    Network network; network.faults = true;
+    network.run({&a, &b, &c}, 3000, 180000);
+    for (Node *node : {&a, &b, &c})
+        assert(node->repo.findRetirement(id)->status == HazardStatus::Resolved && !node->repo.findById(id));
+    std::cout << "PASS: archived expiry still requests a later clearance, promotes the marker without restoring payloads, and converges with a stale third node under packet loss.\n";
+}
+
 void testConfidenceEvidenceSync()
 {
     Node a(7), b(8), c(9); const HazardId id = a.seed();
@@ -569,4 +602,5 @@ void testHazardSync()
     testConcurrentRecordResolution();
     testConflictPolicyAndPersistence();
     testRetirementSyncAndReconnect();
+    testArchivedExpiryLearnsClearance();
 }

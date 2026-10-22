@@ -32,7 +32,7 @@ HazardService::HazardService(HazardRepository &repo, uint32_t node,
                              uint32_t sequence, ReserveSequence callback, void *data,
                              HazardStorage *persistence)
     : repository(repo), nodeId(node), lastSequence(sequence), reserve(callback), context(data),
-      storage(persistence), memoryUtc(0), memoryEvictions(0), memoryCleaned(0),
+      storage(persistence), memoryUtc(0), memoryEvictions(0), memoryCleaned(0), recordReplayBlocks(0), evidenceReplayBlocks(0),
       hasPosition(false), positionLatitude(0), positionLongitude(0) {}
 
 HazardResult HazardService::commit(const HazardRepository &candidate)
@@ -58,7 +58,19 @@ HazardResult HazardService::importRemote(const HazardRecord &record)
     if (record.originNodeId == nodeId && static_cast<uint32_t>(record.id) > lastSequence)
         return HazardResult::PersistenceFailed;
     const HazardRetirement *retired = repository.findRetirement(record.id);
-    if (retired) return retired->createdAt == record.createdAt ? HazardResult::TerminalRecord : HazardResult::Conflict;
+    if (retired)
+    {
+        if (retired->createdAt != record.createdAt) return HazardResult::Conflict;
+        // A clearance dominates timeout even after history was compacted. Keep
+        // only its terminal identity; never restore its payload or observations.
+        if (retired->status == HazardStatus::Expired && record.status == HazardStatus::Resolved)
+        {
+            const HazardRetirement resolved{record.id, record.createdAt, HazardStatus::Resolved};
+            return importRetirements(&resolved, 1);
+        }
+        ++recordReplayBlocks;
+        return HazardResult::TerminalRecord;
+    }
     const HazardRecord *current = repository.findById(record.id);
     if (current)
     {
@@ -155,7 +167,7 @@ HazardObservation HazardService::observation(const PhoneHazardReport &input, Haz
 HazardResult HazardService::importObservation(const HazardObservation &o)
 {
     if (!HazardEvidenceCodec::valid(o)) return HazardResult::InvalidReport;
-    if (repository.findRetirement(o.hazardId)) return HazardResult::TerminalRecord;
+    if (repository.findRetirement(o.hazardId)) { ++evidenceReplayBlocks; return HazardResult::TerminalRecord; }
     const HazardObservation *current = repository.findObservation(o.id);
     if (current) return sameObservation(*current, o) ? HazardResult::Unchanged : HazardResult::Conflict;
     if (repository.findClientObservation(o.observerNodeId, o.clientReportId)) return HazardResult::Conflict;

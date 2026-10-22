@@ -9,6 +9,7 @@
 #include "Hazard Memory Network/Hazard_Confidence.h"
 #include "Hazard Memory Network/Hazard_Conflict.h"
 #include "Hazard Memory Network/Hazard_Memory.h"
+#include "Hazard Memory Network/Hazard_Retention.h"
 #include "Core/LoRa_Transport.h"
 #include "Core/WiFi_Console.h"
 #include <Preferences.h>
@@ -22,6 +23,7 @@ HazardLittleFS storageBackend;
 HazardStorage storage(storageBackend);
 Preferences identity;
 bool identityReady = false;
+bool demoSyncPaused = false;
 PhoneClock phoneClock;
 alignas(HazardService) unsigned char serviceStorage[sizeof(HazardService)];
 HazardService *service = nullptr;
@@ -35,6 +37,7 @@ bool sendHazardFrame(const uint8_t *data, size_t size, void *)
 bool receiveHazardFrame(const uint8_t *data, size_t size, void *)
 {
     if (!HazardSyncCodec::recognizes(data, size)) return false;
+    if (demoSyncPaused) return true;
     hazardSync->receive(data, size, millis());
     return true;
 }
@@ -58,7 +61,7 @@ void help()
     commandOutput->println("REPORT_ID <client_id> <report fields> | REVISE_ID <client_id> <id> <report fields>");
     commandOutput->println("RESOLVE_ID <client_id> <id> <clearance_utc> | GROUPS | EVIDENCE <id>");
     commandOutput->println("CONFIRM_ID / CONTRADICT_ID <client_id> <id> <report fields> | CONFIDENCE <id>");
-    commandOutput->println("CLEANUP | RETIRED | POSITION <phone_lat> <phone_lon> (optional priority context)");
+    commandOutput->println("CLEANUP | RETIRED | RETENTION | POSITION <phone_lat> <phone_lon> (optional priority context)");
     commandOutput->println("GET <id> | LIST | TYPE <type> | NEAR <lat> <lon> <radius_m> | MEMORY | SYNC | HELP");
     commandOutput->println("Phone GPS is simulated by REPORT. Accepted changes are saved to LittleFS.");
 }
@@ -93,6 +96,29 @@ void printRecord(const HazardRecord &r)
                   HazardConfidence::level(confidence.score), service->priority(r, now));
 }
 
+void printRetirements()
+{
+    for (size_t i = 0; i < repository.retirementCount(); ++i)
+    {
+        HazardRetirement marker; repository.retirementAt(i, marker);
+        commandOutput->printf("retired=%llu created=%lu status=%u(%s) marker_expiry=NEVER\n",
+            static_cast<unsigned long long>(marker.id), static_cast<unsigned long>(marker.createdAt),
+            static_cast<unsigned>(marker.status), HazardLifecycle::statusName(marker.status));
+    }
+}
+void printRetentionSummary(uint32_t now)
+{
+    const HazardRetentionSummary summary = HazardRetention::summarize(repository, now);
+    commandOutput->printf("retention_policy=%u utc=%lu history_seconds=%lu marker_expiry=NEVER "
+                          "full_terminal_count=%u eligible_count=%u cleanup_ready=%u cleanup_blocked=%u "
+                          "marker_count=%u free_marker_slots=%u retired_record_blocks=%lu retired_evidence_blocks=%lu\n",
+        static_cast<unsigned>(HazardRetention::POLICY_VERSION), static_cast<unsigned long>(now),
+        static_cast<unsigned long>(HazardRetention::HISTORY_SECONDS), static_cast<unsigned>(summary.fullTerminalCount),
+        static_cast<unsigned>(summary.eligibleCount), static_cast<unsigned>(summary.readyCount), static_cast<unsigned>(summary.blockedCount),
+        static_cast<unsigned>(summary.markerCount), static_cast<unsigned>(summary.freeMarkerSlots),
+        static_cast<unsigned long>(service->blockedRecordImports()), static_cast<unsigned long>(service->blockedEvidenceImports()));
+}
+
 void runLifecycle(uint32_t now, bool verbose = false)
 {
     static HazardResult previous = HazardResult::Ok;
@@ -106,10 +132,51 @@ void runLifecycle(uint32_t now, bool verbose = false)
 
 void execute(char *input)
 {
+    // Erasure is a deliberate USB action. A durable hold prevents an unreset
+    // peer refilling this board before every demo participant is cleared.
+    if (!strncmp(input, "DEMO_", 5))
+    {
+        const uint32_t node = identity.getUInt("node", 0);
+        char reset[48], resume[48];
+        snprintf(reset, sizeof(reset), "DEMO_RESET %lu", static_cast<unsigned long>(node));
+        snprintf(resume, sizeof(resume), "DEMO_RESUME %lu", static_cast<unsigned long>(node));
+        if (!identityReady || !node) { commandOutput->println("DEMO_IDENTITY_UNAVAILABLE"); return; }
+        if (!strcmp(input, reset))
+        {
+            if (commandOutput != &Serial) { commandOutput->println("DEMO_RESET_USB_ONLY"); return; }
+            if (identity.putBool("demo_hold", true) != 1)
+            { commandOutput->println("DEMO_HOLD_FAILED"); return; }
+            demoSyncPaused = true;
+            if (identity.putBool("demo_ready", false) != 1)
+            { commandOutput->println("DEMO_HOLD_FAILED; sync remains paused"); return; }
+            if (!storage.eraseForDemo(repository) || identity.putBool("demo_ready", true) != 1)
+            { commandOutput->println("DEMO_RESET_FAILED; sync remains paused; retry over USB"); return; }
+            commandOutput->println("DEMO_RESET_OK records=0 observations=0 markers=0 sync_paused=1; reset every peer before DEMO_RESUME"); return;
+        }
+        if (!strcmp(input, resume))
+        {
+            if (!demoSyncPaused) { commandOutput->println("DEMO_ALREADY_RUNNING"); return; }
+            if (!identity.getBool("demo_ready", false)) { commandOutput->println("DEMO_RESET_INCOMPLETE; retry reset over USB"); return; }
+            if (identity.putBool("demo_hold", false) != 1) { commandOutput->println("DEMO_RESUME_FAILED"); return; }
+#if HAZARD_ENABLE_LORA
+            hazardSync->~HazardSync();
+            uint32_t session = esp_random();
+            if (!session) session = 1;
+            hazardSync = new (syncStorage) HazardSync(repository, *service, node, session, sendHazardFrame, nullptr);
+#endif
+            demoSyncPaused = false;
+            commandOutput->println("DEMO_RESUME_OK"); return;
+        }
+        commandOutput->println("DEMO_WRONG_NODE_OR_COMMAND"); return;
+    }
     HazardCommand c;
     if (!parseHazardCommand(input, c)) { commandOutput->println("INVALID_COMMAND; enter HELP"); return; }
+    if (demoSyncPaused && (c.action == ConsoleAction::Report || c.action == ConsoleAction::Revise ||
+        c.action == ConsoleAction::Resolve || c.action == ConsoleAction::Confirm || c.action == ConsoleAction::Contradict))
+    { commandOutput->println("DEMO_SYNC_PAUSED; reset every peer then DEMO_RESUME this node"); return; }
     const uint32_t now = phoneClock.now(millis());
-    if (c.action != ConsoleAction::Time) runLifecycle(now);
+    if (c.action != ConsoleAction::Time && c.action != ConsoleAction::Cleanup &&
+        c.action != ConsoleAction::Retention) runLifecycle(now);
     switch (c.action)
     {
     case ConsoleAction::Confidence:
@@ -259,14 +326,27 @@ void execute(char *input)
         break;
     }
     case ConsoleAction::Retired:
-        for (size_t i = 0; i < repository.retirementCount(); ++i)
+        printRetirements();
+        break;
+    case ConsoleAction::Retention:
+        printRetentionSummary(now);
+        for (size_t i = 0; i < repository.count(); ++i)
         {
-            HazardRetirement marker; repository.retirementAt(i, marker);
-            commandOutput->printf("retired=%llu created=%lu status=%u(%s)\n", static_cast<unsigned long long>(marker.id),
-                static_cast<unsigned long>(marker.createdAt), static_cast<unsigned>(marker.status), HazardLifecycle::statusName(marker.status));
+            HazardRecord r; repository.getAt(i, r);
+            const HazardRetentionView view = HazardRetention::evaluate(repository, r, now);
+            char remaining[24];
+            if (view.timeKnown) snprintf(remaining, sizeof(remaining), "%llu", static_cast<unsigned long long>(view.remainingSeconds));
+            else snprintf(remaining, sizeof(remaining), "UNKNOWN");
+            commandOutput->printf("retention id=%llu created=%lu expires=%lu state=%s status=%u(%s) "
+                                  "deadline=%llu remaining_seconds=%s\n", static_cast<unsigned long long>(r.id),
+                static_cast<unsigned long>(r.createdAt), static_cast<unsigned long>(r.expiresAt),
+                HazardRetention::phaseName(view.phase), static_cast<unsigned>(view.terminalStatus),
+                HazardLifecycle::statusName(view.terminalStatus), static_cast<unsigned long long>(view.deadline), remaining);
         }
+        printRetirements();
         break;
     case ConsoleAction::Memory:
+        commandOutput->printf("memory_policy=1 demo_sync_paused=%u\n", static_cast<unsigned>(demoSyncPaused));
         commandOutput->printf("records=%u capacity=%u record_bytes=%u repository_bytes=%u free_heap=%u utc=%lu "
                       "storage_writable=%u snapshot_generation=%llu\n",
             static_cast<unsigned>(repository.count()), static_cast<unsigned>(HazardRepository::CAPACITY),
@@ -284,6 +364,7 @@ void execute(char *input)
             static_cast<unsigned long>(HazardMemory::RETENTION_SECONDS), static_cast<unsigned long>(service->evictedCount()),
             static_cast<unsigned long>(service->cleanedCount()), static_cast<unsigned>(service->positionKnown()),
             static_cast<unsigned>(repository.retirementCount() == HazardRepository::RETIREMENT_CAPACITY));
+        printRetentionSummary(now);
         break;
     }
 }
@@ -305,6 +386,7 @@ void setup()
     Serial.begin(SERIAL_BAUD_RATE);
     delay(START_DELAY);
     identityReady = identity.begin("hazard-id", false);
+    demoSyncPaused = identityReady && identity.getBool("demo_hold", false);
     const uint64_t chipId = ESP.getEfuseMac();
     const uint32_t hardwareNode = static_cast<uint32_t>(chipId ^ (chipId >> 32));
     // Use the factory-derived identity unless an explicit unique ID is configured.
@@ -376,7 +458,7 @@ void loop()
     }
 #if HAZARD_ENABLE_LORA
     LoRaTransport::poll();
-    hazardSync->tick(millis());
+    if (!demoSyncPaused) hazardSync->tick(millis());
 #endif
     WiFiConsole::poll();
     size_t budget = 64;

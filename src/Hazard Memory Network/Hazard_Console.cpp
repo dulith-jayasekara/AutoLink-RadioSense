@@ -64,6 +64,7 @@ bool parseHazardCommand(char *line, HazardCommand &c)
         else if (!strcmp(tokens[0], "MEMORY")) c.action = ConsoleAction::Memory;
         else if (!strcmp(tokens[0], "SYNC")) c.action = ConsoleAction::Sync;
         else if (!strcmp(tokens[0], "CLEANUP")) c.action = ConsoleAction::Cleanup;
+        else if (!strcmp(tokens[0], "RETENTION")) c.action = ConsoleAction::Retention;
         else if (!strcmp(tokens[0], "RETIRED")) c.action = ConsoleAction::Retired;
         else if (!strcmp(tokens[0], "GROUPS")) c.action = ConsoleAction::Groups;
         else return false;

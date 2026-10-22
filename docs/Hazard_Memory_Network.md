@@ -14,10 +14,11 @@ The subsystem lives under `src/Hazard Memory Network/`. `src/main.cpp` coordinat
 | Confidence | Derived presence score, latest independent observer votes and time decay |
 | Conflict | Deterministic canonical record selection and terminal protection |
 | Memory | Priority admission, retained terminal history, compact replay protection and atomic reclamation |
+| Retention | Read-only deadlines, cleanup capacity accounting and permanent terminal protection diagnostics |
 | Sync | LoRa summaries, bounded requests/retries and persistent record/evidence imports |
 | Console | Shared command parser |
 | `Core/LoRa_Transport` | One radio owner with packet dispatch and asynchronous transmission |
-| `Core/WiFi_Console` | Optional HTTP monitor and router setup interface |
+| `Core/WiFi_Console` | Independent hotspot and bounded HTTP data API |
 
 Capacity is 16 raw records and 32 observations per node. Snapshot schema 4 reads schemas 1–3 without inventing evidence or retirement markers. LoRa synchronization uses protocol version 5; upgrade all communicating nodes together. Protocol 5 shares compact retirement markers; older peers cannot safely participate. Existing records/evidence migrate on the next successful save. Observer IDs and report keys provide identity/deduplication, not authentication.
 
@@ -47,6 +48,7 @@ LIST
 GROUPS
 MEMORY
 CLEANUP
+RETENTION
 RETIRED
 POSITION <phone_lat> <phone_lon>
 SYNC
@@ -110,13 +112,33 @@ Markers have no automatic expiry or overwrite policy. When all 64 slots are occu
 
 `CLEANUP` runs the same retention policy explicitly. Normal lifecycle processing batches eligible cleanup with state transitions, and admission batches cleanup, eviction and the accepted mutation into one verified snapshot. Identical commits, repeated cleanup, marker retransmissions and rejected admissions do not write snapshots. Accepted reports/evidence still persist before acknowledgement; there is no unsafe delayed-write buffer. `MEMORY` exposes capacities, `retired_count`, `retirement_full`, retention seconds, per-boot `evicted`/`cleaned` counts and optional position presence. GET/LIST include a local derived `priority`; RETIRED lists markers. The maximum snapshot is 3738 bytes; snapshots without markers retain the original record/evidence layout and schema 4 appends a count plus 13 bytes per marker only when needed.
 
-## Optional Wi-Fi interface
+## Terminal-marker retention
 
-The board starts `RadioSense-<node_id>` with the password configured by `HAZARD_WIFI_PASSWORD` (default `RadioSense32`). Its setup page is http://192.168.4.1. Enter a 2.4 GHz router's credentials on that page to join a shared LAN; the page and serial output show the assigned router IP. The setup hotspot remains available, and credentials are stored in separate NVS settings. The router must allow communication between clients. Router LAN subnet 192.168.4.x can conflict with the setup hotspot subnet.
+`Hazard_Retention` is the shared source of truth for full-history retention timing and cleanup eligibility. `RETENTION` reads its status without running cleanup, setting UTC or changing records. It reports `retention_policy=1`, current node UTC, full terminal histories, eligible histories, available marker slots, cleanup-ready/blocked counts and per-boot blocked record/evidence imports. Each full record includes its phase, terminal state, expiry, 64-bit cleanup deadline and remaining seconds. Unknown UTC is explicit; deadlines past the end of the 32-bit UTC range do not wrap into an early cleanup.
 
-Endpoints: GET `/`, GET `/api/status`, GET `/api/network`, POST `/api/command`, POST `/api/network`. POST requests require `X-RadioSense: 1`; commands use a `command` form field. The interface bounds command length to 191 bytes and output to 16384 bytes. Network settings are submitted as `ssid` and `password` form fields; the password is not returned. Anyone with network access to the interface can issue modifying commands, so it is intended for a private research setup.
+Phases are Ongoing, UnknownTime, HistoryRetained, Eligible and CapacityBlocked. If several histories are eligible but fewer marker slots remain, aggregate cleanup-ready/blocked counts reflect that partial capacity. Evaluating the view does not write storage. `CLEANUP` performs its own cleanup transaction without a preceding command-triggered lifecycle pass consuming the reported removals; scheduled lifecycle maintenance still runs normally.
 
-Set `HAZARD_ENABLE_WIFI_CONSOLE=0` to disable HTTP monitoring. LoRa remains the synchronization transport. Keep one owner of the radio; other components should use the shared transport rather than independently consuming LoRa packets.
+Compact marker expiry is NEVER: no elapsed time or incoming ongoing revision can reopen a retired ID. A valid later Resolved record with matching ID/creation time can promote an Expired marker to Resolved, including when all 64 marker slots are occupied. The marker update persists before acceptance and never restores raw history or evidence. Synchronization continues fetching advertised records for an Expired archived ID so it can learn such a clearance; Resolved markers already dominate every record class. Marker gossip then shares the final terminal identity with reconnecting nodes. A mismatched creation time remains a conflict.
+
+The demo's retention panel compares terminal ID/creation/state protection across full records and compact markers. Their storage representations may differ legitimately. Explicit cleanup preserves compact markers, and no automatic marker deletion control is provided. Diagnostics are additive: wire protocol stays 5 and snapshot schema stays 4; all retirement markers remain readable without migration. The fixed 64-marker limit still requires a separate archival/epoch design for unbounded operation.
+
+## Independent laptop links
+
+Each laptop runs a local Python application on http://127.0.0.1:8765 and connects to its own ESP32 hotspot. The ESP32 exposes only its data API at http://192.168.4.1. The identical node addresses belong to separate networks; LoRa handles peer synchronization. A router is unnecessary.
+
+The SSID is `RadioSense-<node_id>` and the password is `HAZARD_WIFI_PASSWORD` (default `RadioSense32`). `HAZARD_WIFI_MAX_CLIENTS` defaults to one connected client; this is not permanent device pairing. AP-only mode does not load or overwrite old router credentials. Keep the hotspot connection if the laptop reports no internet.
+
+GET `/` returns API metadata, not an HTML application. GET `/api/status` supplies node identity plus MEMORY/SYNC/LIST/GROUPS output; GET `/api/network` describes AP-only mode, `api_version=3`. POST `/api/command` requires `X-RadioSense: 1` and one `command` form field. Clients should also send `X-RadioSense-Node: <expected_node_id>`: mismatched targets receive 409 before execution. Commands are limited to 191 bytes, output to 16384 bytes. POST `/api/network` returns 409; router setup is disabled. Node IDs and hotspot access do not authenticate observations.
+
+The local demo application and its map/browser assets remain outside the repository. The local proxy checks the selected node's identity before commands and sends the target-node header. Browser location on localhost requires permission; precision depends on the laptop's location provider. The map shows reported accuracy. Offline markers/grid are bundled; optional OpenStreetMap street tiles need internet. No fabricated or IP-based position is labelled as measured GPS.
+
+### Controlled fresh-demo reset
+
+`DEMO_RESET <own_node_id>` is accepted **only over USB Serial**. It clears raw records, immutable observations and retirement markers by writing and verifying an empty snapshot to both slots. It retains the NVS node identity and monotonic ID sequence, and persists a LoRa synchronization hold before erasure. Normal reports/assessments are blocked while held. Failed erasure does not acknowledge success; retry over USB, including after a reboot, until both slots are cleared.
+
+Reset every participating board before resuming any. `DEMO_RESUME <own_node_id>` clears a completed hold and starts a fresh synchronization session; it may be sent through the node-bound local app. MEMORY exposes `demo_sync_paused`. The hold survives power loss, preventing an old peer from immediately refilling the cleared node. Other unreset peers must remain off during this clean demonstration because the reset deliberately removes prior replay protection. This maintenance reset is separate from normal CLEANUP, which preserves compact terminal identities.
+
+Set `HAZARD_ENABLE_WIFI_CONSOLE=0` to disable the HTTP API. Application uploads normally retain hazard storage; the explicit reset command is required for erasure. Do not use uploadfs or erase unrelated NVS settings.
 
 ## Current limitations
 

@@ -48,6 +48,8 @@ public:
     unsigned priority(const HazardRecord &record, uint32_t now) const;
     uint32_t evictedCount() const { return memoryEvictions; }
     uint32_t cleanedCount() const { return memoryCleaned; }
+    uint32_t blockedRecordImports() const { return recordReplayBlocks; }
+    uint32_t blockedEvidenceImports() const { return evidenceReplayBlocks; }
     static uint32_t ttlSeconds(HazardType type);
     static constexpr uint8_t INITIAL_CONFIDENCE = 50;
     static constexpr uint32_t MAX_FIX_AGE_SECONDS = 120;
@@ -67,7 +69,7 @@ private:
     ReserveSequence reserve;
     void *context;
     HazardStorage *storage;
-    uint32_t memoryUtc, memoryEvictions, memoryCleaned;
+    uint32_t memoryUtc, memoryEvictions, memoryCleaned, recordReplayBlocks, evidenceReplayBlocks;
     bool hasPosition;
     double positionLatitude, positionLongitude;
 };

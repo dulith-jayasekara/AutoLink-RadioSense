@@ -39,6 +39,9 @@ public:
     // Writes only the inactive slot, then reads it back and verifies it.
     // Failed writes disable further saves until load()/restart resolves disk state.
     bool save(const HazardRepository &repository);
+    // Controlled demo reset: callers must isolate synchronization and preserve
+    // ID counters. Both recovery slots are replaced with verified empty data.
+    bool eraseForDemo(HazardRepository &repository);
     bool writable() const { return canWrite; }
     uint64_t generation() const { return currentGeneration; }
 private:

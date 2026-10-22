@@ -10,3 +10,5 @@ __pycache__/
 # Local experimental output belongs outside the shared branch.
 test/results/
 test/system/hardware-results/
+test/system/**/*output.txt
+/Project folder structure.txt

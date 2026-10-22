@@ -316,10 +316,35 @@ void testRealFiles(const char *directory)
     assert(recovered.load(repo) == StorageLoad::Recovered && repo.count() == 1);
     std::cout << "PASS: real host files survive instance restart; truncated newest file restores prior snapshot.\n";
 }
+void testDemoErase()
+{
+    MemoryBackend files;
+    HazardStorage storage(files);
+    HazardRepository repo;
+    assert(storage.load(repo) == StorageLoad::Empty);
+    assert(repo.add(record(1)) && storage.save(repo));
+    assert(repo.add(record(2)) && storage.save(repo));
+    assert(storage.eraseForDemo(repo) && repo.count() == 0 && repo.observationCount() == 0 && repo.retirementCount() == 0);
+    for (unsigned slot = 0; slot < 2; ++slot)
+    {
+        HazardRepository decoded;
+        uint64_t generation = 0;
+        assert(HazardSnapshot::decode(files.slots[slot].data(), files.slots[slot].size(), decoded, generation));
+        assert(decoded.count() == 0 && decoded.observationCount() == 0 && decoded.retirementCount() == 0);
+    }
+    // A damaged newest snapshot cannot restore old hazards from the other slot.
+    files.slots[1].resize(7);
+    HazardStorage reboot(files);
+    assert(reboot.load(repo) == StorageLoad::Recovered && repo.count() == 0);
+    assert(repo.add(record(3)) && reboot.save(repo));
+    files.cut = 7;
+    assert(!reboot.eraseForDemo(repo) && !reboot.writable() && repo.count() == 1);
+    std::cout << "PASS: explicit demo erase clears both recovery slots; corruption cannot resurrect prior hazards; failed erasure is not acknowledged.\n";
+}
 }
 
 void testHazardStorage(const char *directory)
 {
     testCodec(); testRecovery(); testEveryInterruptedWrite();
-    testServiceTransactions(); testRealFiles(directory);
+    testServiceTransactions(); testRealFiles(directory); testDemoErase();
 }

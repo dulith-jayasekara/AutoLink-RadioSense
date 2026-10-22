@@ -17,8 +17,10 @@ def main():
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     results = []
 
-    def request(path, command=None, header=True):
+    def request(path, command=None, header=True, expected_node=None):
         headers = {'X-RadioSense': '1'} if header else {}
+        if header:
+            headers['X-RadioSense-Node'] = expected_node or args.expect_node
         data = None if command is None else urllib.parse.urlencode({'command': command}).encode()
         req = urllib.request.Request(args.url.rstrip('/') + path, data=data, headers=headers)
         try:
@@ -26,8 +28,9 @@ def main():
         except urllib.error.HTTPError as error:
             reply = error
         with reply:
-            body = reply.read(16385)
-            assert len(body) <= 16384, 'Oversized response'
+            limit = 65536 if path == '/' else 16384
+            body = reply.read(limit + 1)
+            assert len(body) <= limit, 'Oversized response'
             return reply.code, reply.headers, body.decode('utf-8')
 
     def check(name, condition):
@@ -36,7 +39,16 @@ def main():
         print('PASS:', name, flush=True)
 
     code, headers, body = request('/')
-    check('dashboard HTML served', code == 200 and 'RadioSense Node Monitor' in body)
+    check('API-only root served', code == 200 and json.loads(body)['service'] == 'RadioSense node API'
+          and 'text/html' not in headers.get('Content-Type', ''))
+    code, _, body = request('/api/network')
+    network = json.loads(body)
+    check('independent hotspot configuration', code == 200 and network['node'] == args.expect_node
+          and network['mode'] == 'device_ap' and network['router_required'] is False
+          and network['synchronization'] == 'lora' and network['ap_ip'] == '192.168.4.1')
+    other_node = '2' if args.expect_node == '1' else '1'
+    code, _, body = request('/api/command', 'LIST', expected_node=other_node)
+    check('command for a different node rejected', code == 409 and 'WRONG_NODE' in body)
     code, headers, body = request('/api/status')
     check('expected node identity', code == 200 and f'node={args.expect_node} ' in body)
     check('live status includes storage, sync, records and groups', all(

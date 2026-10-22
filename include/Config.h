@@ -15,5 +15,9 @@
 #ifndef HAZARD_WIFI_PASSWORD
 #define HAZARD_WIFI_PASSWORD "RadioSense32"
 #endif
+// Independent hotspot per vehicle; one phone/laptop by default.
+#ifndef HAZARD_WIFI_MAX_CLIENTS
+#define HAZARD_WIFI_MAX_CLIENTS 1
+#endif
 #define SERIAL_BAUD_RATE 115200
 #define START_DELAY 5000

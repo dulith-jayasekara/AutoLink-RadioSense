@@ -158,7 +158,8 @@ void HazardSync::handleSummary(const SyncFrame &f)
             if (HazardEvidenceCodec::fingerprint(*observation) != digest) ++counters.conflicts;
             continue;
         }
-        if (!evidence && repository.findRetirement(id)) continue;
+        const HazardRetirement *retired = evidence ? nullptr : repository.findRetirement(id);
+        if (retired && retired->status == HazardStatus::Resolved) continue;
         const HazardRecord *local = evidence ? nullptr : repository.findById(id);
         // Versions alone cannot rank terminal markers or concurrent revisions.
         // Fetch every differing advertised record, then apply the shared policy.
@@ -282,7 +283,8 @@ void HazardSync::tick(uint32_t now)
     for (auto &p : pending)
     {
         if (!p.used) continue;
-        if (!p.evidence && repository.findRetirement(p.id)) { p.used = false; continue; }
+        const HazardRetirement *retired = p.evidence ? nullptr : repository.findRetirement(p.id);
+        if (retired && retired->status == HazardStatus::Resolved) { p.used = false; continue; }
         const HazardObservation *o = p.evidence ? repository.findObservation(p.id) : nullptr;
         if (o) { p.used = false; continue; }
         const HazardRecord *local = p.evidence ? nullptr : repository.findById(p.id);

@@ -1,11 +1,12 @@
 #pragma once
 #include "Hazard_Repository.h"
+#include "Hazard_Retention.h"
 
 class HazardMemory
 {
 public:
     static constexpr unsigned POLICY_VERSION = 1;
-    static constexpr uint32_t RETENTION_SECONDS = 86400;
+    static constexpr uint32_t RETENTION_SECONDS = HazardRetention::HISTORY_SECONDS;
     static constexpr uint32_t RETRY_PROTECTION_SECONDS = 300;
     // Position is optional application-supplied context; never a fabricated GPS fix.
     static unsigned priority(const HazardRepository &repo, const HazardRecord &record, uint32_t now,

@@ -23,10 +23,11 @@ def main():
                 str(root / "test" / "unit" / "hazard_evidence_test.cpp"),
                 str(root / "test" / "unit" / "hazard_confidence_test.cpp"),
                 str(root / "test" / "unit" / "hazard_memory_policy_test.cpp"),
+                str(root / "test" / "unit" / "hazard_retention_test.cpp"),
                 *[str(source / name) for name in (
                     "Hazard_Record.cpp", "Hazard_Repository.cpp",
                     "Hazard_Service.cpp", "Hazard_Console.cpp", "Hazard_Storage.cpp", "Hazard_Lifecycle.cpp",
-                    "Hazard_Sync.cpp", "Hazard_Evidence.cpp", "Hazard_Groups.cpp", "Hazard_Confidence.cpp", "Hazard_Conflict.cpp", "Hazard_Memory.cpp",
+                    "Hazard_Sync.cpp", "Hazard_Evidence.cpp", "Hazard_Groups.cpp", "Hazard_Confidence.cpp", "Hazard_Conflict.cpp", "Hazard_Memory.cpp", "Hazard_Retention.cpp",
                 )],
                 "-o", binary,
             ],
@@ -47,6 +48,16 @@ def main():
             check=True,
         )
         subprocess.run([transport_binary], check=True)
+        wifi_binary = str(Path(directory) / "wifi_device_link_test")
+        subprocess.run([
+            os.environ.get("CXX", "clang++"), "-std=c++11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+            "-I", str(root / "test" / "host_stubs" / "wifi"),
+            "-I", str(root / "src" / "Core"), "-I", str(root / "include"),
+            str(root / "test" / "unit" / "wifi_device_link_test.cpp"),
+            str(root / "src" / "Core" / "WiFi_Console.cpp"), "-o", wifi_binary,
+        ], check=True)
+        subprocess.run([wifi_binary], check=True)
+
 
 
 if __name__ == "__main__":

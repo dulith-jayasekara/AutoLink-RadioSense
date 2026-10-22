@@ -240,3 +240,11 @@ bool HazardStorage::save(const HazardRepository &repo)
     canWrite = true;
     return true;
 }
+
+bool HazardStorage::eraseForDemo(HazardRepository &repository)
+{
+    const HazardRepository empty;
+    if (!save(empty)) return false;
+    repository = empty;
+    return save(empty);
+}
