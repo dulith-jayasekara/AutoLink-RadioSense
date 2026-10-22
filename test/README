@@ -1,6 +1,17 @@
 # Tests (`test`)
 
-The `test` directory contains automated tests for the AutoLink RadioSense firmware.
+The `test` directory contains host tests and hardware diagnostics for AutoLink RadioSense.
+
+## Where to work
+
+| Directory | Purpose | Build configuration |
+| --- | --- | --- |
+| `unit/` | Host-side component tests and simulations | See local READMEs |
+| `system/` | Raw transmission/reception firmware and captured logs | Repository root `platformio.ini`: `raw_tx`, `raw_rx`, `raw_tx_rx` |
+| `embedded/` | Standalone ESP32 diagnostic projects | Each project's own `platformio.ini` |
+
+See [embedded project guide](embedded/README.md) for the hardware project list.
+Node B's active application is `embedded/scf_beacon_forwarder/src/Node_B_forwarder.cpp`.
 
 Testing is used to verify the correctness and reliability of individual software components and algorithms before they are integrated into the complete ESP32 application.
 

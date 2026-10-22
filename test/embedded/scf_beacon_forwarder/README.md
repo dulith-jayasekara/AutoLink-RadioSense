@@ -5,20 +5,20 @@ Node A keeps its existing 25-byte Beacon firmware. Node B uses this project's
 No hardware result is claimed by compilation. Prior user-verified reception,
 raw display, diagnostic wrapping, buffer lookup and tracker tests are preserved.
 
-## Audit and preservation
+## Project layout
 
-The original platformio.ini and extra_sources.py were present; src/main.cpp was
-zero bytes. Node C had only an empty src directory. The missing application logic
-explains why these skeletons were not ready. How they became incomplete cannot
-be established from the files alone.
-All existing files were left untouched, including the empty main.cpp. Actual
-Arduino setup/loop live in new src/forwarder.cpp. The existing script compiles
-Message, Codec and Buffer but omits DuplicateTracker. A new compilation bridge
-src/production_duplicate_tracker.cpp includes the unchanged production .cpp once;
-it does not copy/reimplement the class or require changes to the existing script.
-The new shared diagnostic header is also used by C. Both depend on the existing
-beacon_compat_receiver/include/BeaconDecoder.h. Preserve that dependency when
-later reviewing files for commit. No Scheduler, Reliability or RadioAdapter runs.
+- `src/Node_B_forwarder.cpp`: active Node B firmware, imported from the generic relay patch.
+- `src/production_duplicate_tracker.cpp`: compilation bridge for the shared tracker.
+- `include/ForwardingDiagnostic.h`: radio settings and diagnostic helpers, also used by Node C.
+- `platformio.ini` and `extra_sources.py`: standalone build configuration.
+- `archive/`: earlier Beacon-only application and empty entry point, excluded from builds.
+
+The active firmware accepts valid Beacons and complete nonempty raw payloads up to
+64 bytes through the same SCF storage path. Incoming SCF DATA frames are excluded;
+identity-preserving multi-hop relay is not implemented. The Beacon-specific example
+below describes the 25-byte Beacon case; raw payloads produce variable frame lengths.
+Shared production implementations remain in the repository's `src/Store Carry Forward/`.
+The existing Beacon decoder remains in `../beacon_compat_receiver/include/`.
 
 ## Behavior and limits
 
@@ -67,7 +67,7 @@ $pio = "$env:USERPROFILE\.platformio\penv\Scripts\platformio.exe"
 & $pio run -d test/embedded/scf_forwarded_receiver
 ```
 
-## Hardware procedure — requires explicit approval first
+## Hardware procedure - requires explicit approval first
 
 1. Confirm Node A radio/CRC code and identify the actual B and C serial ports.
 2. Upload Node B's forwarder and Node C's forwarded_receiver only after approval.
