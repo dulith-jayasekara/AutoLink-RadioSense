@@ -1,0 +1,47 @@
+# Unit Testing
+
+The `unit/` directory contains tests used to verify individual software components of the AutoLink RadioSense system in isolation.
+
+Unit tests focus on the correctness of specific functions, classes, algorithms, and software modules without requiring the complete system or physical communication between hardware devices.
+
+## Purpose
+
+The purpose of unit testing is to identify and verify the correctness of individual software components before they are integrated into the complete system.
+
+Typical unit tests may include:
+
+* Testing individual functions and classes
+* Verifying data validation and processing logic
+* Testing packet parsing and field extraction
+* Testing RSSI, SNR, and PDR calculations
+* Testing geographic distance and progress calculations
+* Testing relay-selection and routing calculations
+* Verifying boundary conditions and invalid inputs
+* Detecting software defects at an early stage of development
+
+## Organization
+
+Unit tests are organized according to the software subsystem or functionality being tested.
+
+```text
+unit/
+├── README.md
+├── Beacon/
+├── Neighbour/
+├── LinkQuality/
+└── Routing/
+```
+
+Additional test directories may be added as new software modules are developed.
+
+## Testing Approach
+
+Each unit test should focus on a specific software component and should minimize dependencies on other components or physical hardware.
+
+Where possible, tests should use predefined inputs and expected outputs so that the correctness of the tested component can be determined objectively.
+
+## Scope
+
+Unit testing is primarily concerned with **software-level verification**. It does not replace system-level testing using the actual ESP32 and LoRa hardware.
+
+The results of unit testing should be used together with system-level testing to verify the overall reliability of the AutoLink RadioSense system.

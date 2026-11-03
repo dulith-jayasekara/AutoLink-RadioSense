@@ -1,46 +1,11 @@
+# Libraries (`lib`)
 
-This directory is intended for project specific (private) libraries.
-PlatformIO will compile them to static libraries and link into the executable file.
+The `lib` directory is reserved for **local or custom reusable libraries** used by the AutoLink RadioSense firmware.
 
-The source code of each library should be placed in a separate directory
-("lib/your_library_name/[Code]").
+Libraries placed in this directory are intended to provide functionality that can be reused by multiple parts of the project without being tightly coupled to a specific application subsystem.
 
-For example, see the structure of the following example libraries `Foo` and `Bar`:
+This directory should not normally be used for the project's main application logic. Subsystem implementations should remain within `src`.
 
-|--lib
-|  |
-|  |--Bar
-|  |  |--docs
-|  |  |--examples
-|  |  |--src
-|  |     |- Bar.c
-|  |     |- Bar.h
-|  |  |- library.json (optional. for custom build options, etc) https://docs.platformio.org/page/librarymanager/config.html
-|  |
-|  |--Foo
-|  |  |- Foo.c
-|  |  |- Foo.h
-|  |
-|  |- README --> THIS FILE
-|
-|- platformio.ini
-|--src
-   |- main.c
+External libraries obtained through PlatformIO's library manager should normally be declared as dependencies in `platformio.ini` rather than manually placed in this directory.
 
-Example contents of `src/main.c` using Foo and Bar:
-```
-#include <Foo.h>
-#include <Bar.h>
-
-int main (void)
-{
-  ...
-}
-
-```
-
-The PlatformIO Library Dependency Finder will find automatically dependent
-libraries by scanning project source files.
-
-More information about PlatformIO Library Dependency Finder
-- https://docs.platformio.org/page/librarymanager/ldf.html
+Custom libraries may be added here when they provide reusable functionality that is appropriate to isolate from the main application source code.

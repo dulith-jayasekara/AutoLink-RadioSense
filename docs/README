@@ -1,0 +1,23 @@
+# Documentation (`docs`)
+
+The `docs` directory contains project documentation related to the design, implementation, testing, and research aspects of **AutoLink RadioSense**.
+
+This directory is intended to keep technical and project documentation separate from the source code while maintaining all relevant development information within the repository.
+
+Documentation may include:
+
+* System architecture
+* Software architecture
+* Hardware architecture and wiring
+* LoRa communication configuration
+* Beacon packet format and protocol specifications
+* Neighbour management methodology
+* Link quality assessment methodology
+* Routing and relay selection algorithms
+* Multi-hop forwarding methodology
+* Research novelty documentation
+* Design decisions
+* Testing and validation results
+* Development notes and implementation guides
+
+The `docs` directory serves as a reference for project members and helps maintain a clear connection between the research methodology, system design, and firmware implementation.

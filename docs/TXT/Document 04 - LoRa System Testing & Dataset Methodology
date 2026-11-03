@@ -1,0 +1,566 @@
+## Document 04 — LoRa Radio System Testing and Dataset Methodology
+# AutoLink RadioSense
+
+**Project:** AutoLink RadioSense
+**Hardware Platform:** ESP32 DevKit + SX1278 Ra-02 LoRa Transceiver
+**Development Environment:** VS Code + PlatformIO
+**Test Category:** System Testing
+**Total Test Cases:** 20
+**Testing Phases:** Raw LoRa Radio Testing and Final Packet Testing
+
+---
+
+## 1. Introduction
+
+The purpose of the system testing framework is to verify the functionality, reliability, and performance of the LoRa communication subsystem developed for AutoLink RadioSense.
+
+The testing process is divided into two major phases. The first phase evaluates the fundamental capabilities of the LoRa radio using raw payloads without a custom application-level packet header. The second phase evaluates the communication system using the finalized application packet structure, including its header fields and payload.
+
+This two-phase methodology allows the underlying radio performance to be evaluated independently before determining the performance and correctness of the complete communication protocol.
+
+The experiments will investigate the effects of radio configuration, packet size, transmission distance, environmental conditions, and node mobility. The results will be recorded in a structured experimental dataset for subsequent analysis and use in the development of the project's communication mechanisms.
+
+## 2. Testing Objectives
+
+The main objectives of the system testing framework are:
+
+* Verify successful initialization and operation of the SX1278 LoRa transceiver.
+* Verify raw packet transmission and reception between two ESP32 nodes.
+* Evaluate payload integrity, transmission stability, and communication reliability.
+* Determine the influence of spreading factor, bandwidth, coding rate, and transmission power on radio performance.
+* Evaluate packet delivery performance over different distances and environmental conditions.
+* Investigate communication behaviour when the transmitter or receiver is moving.
+* Validate the construction, transmission, reception, parsing, and integrity of the finalized application packet.
+* Compare the performance of raw payloads with that of the finalized packet format.
+* Develop a comprehensive, reproducible dataset containing radio configuration, environmental conditions, and communication performance measurements.
+
+## 3. Testing Architecture
+
+System testing will use two ESP32-based LoRa nodes:
+
+* **Transmitter Node:** Generates and transmits test packets using the configured LoRa radio parameters.
+* **Receiver Node:** Receives transmitted packets and records the available packet information and radio measurements.
+
+Both nodes will use the existing LoRa initialization implementation wherever appropriate. Test-specific firmware will be organized within the `test/system/` directory, following the project's established PlatformIO configuration.
+
+During the raw testing phase, packets will contain arbitrary test data without a custom AutoLink application-level header. During the final-packet testing phase, packets will follow the agreed application packet specification.
+
+Where appropriate, configurable firmware will be reused across multiple experiments instead of implementing an entirely separate radio driver or transmission mechanism for each test case.
+
+## 4. Phase A — Raw LoRa Radio Testing
+
+### 4.1 Overview
+
+The first phase focuses on characterizing the LoRa radio independently of the final application packet format. These tests establish baseline radio behaviour and identify the effects of different operating conditions and radio parameters.
+
+No custom application-level packet header is required during this phase. Test instrumentation, such as sequence numbers maintained by the experimental software, may be used to identify transmissions and calculate packet delivery statistics.
+
+### 4.2 Test Cases
+
+#### Test 01: LoRa Initialization
+
+**Status:** Completed.
+
+**Objective:** Verify that the SX1278 transceiver initializes successfully using the configured radio parameters.
+
+**Procedure:**
+
+1. Start the ESP32 and initialize the LoRa module.
+2. Verify that initialization succeeds.
+3. Display the configured frequency, spreading factor, bandwidth, coding rate, and other relevant settings in the Serial Monitor.
+4. Report initialization failures when they occur.
+
+**Expected Outcome:** The LoRa module initializes successfully and reports the intended configuration.
+
+#### Test 02: Raw LoRa Transmission
+
+**Status:** Completed.
+
+**Objective:** Verify that the transmitter can send a raw LoRa payload.
+
+**Procedure:**
+
+1. Initialize the LoRa module.
+2. Generate a simple payload containing test text or arbitrary bytes.
+3. Transmit the payload.
+4. Display the payload, length, and transmission result in the Serial Monitor.
+
+**Expected Outcome:** The transmitter successfully submits the raw payload for transmission and reports the result returned by the radio library.
+
+#### Test 03: Raw LoRa Reception
+
+**Status:** Completed.
+
+**Objective:** Verify that the receiver can receive and display a raw LoRa payload.
+
+**Procedure:**
+
+1. Initialize the LoRa module.
+2. Place the receiver in continuous receive mode or use the library's supported reception mechanism.
+3. Receive a transmitted packet.
+4. Display the payload, received length, RSSI, and SNR where available.
+
+**Expected Outcome:** The receiver successfully receives and displays the raw payload and available radio measurements.
+
+#### Test 04: Raw Payload Integrity
+
+**Objective:** Verify that received payload bytes match the transmitted payload.
+
+**Procedure:**
+
+1. Transmit predefined data patterns, including repeated characters, zero-valued bytes, alternating bit patterns, and deterministic pseudorandom bytes.
+2. Repeat the experiment with different payload contents and lengths.
+3. Compare the transmitted and received byte sequences.
+4. Record length mismatches and content mismatches.
+
+**Measurements:** Payload length, successful receptions, length mismatches, content mismatches, and packet loss.
+
+**Expected Outcome:** Received payloads match the transmitted bytes for successfully received packets.
+
+#### Test 05: Raw Packet Size
+
+**Objective:** Determine how raw payload size affects transmission duration and communication performance.
+
+**Procedure:**
+
+1. Select several payload lengths within the supported limits of the radio library and LoRa configuration.
+2. Transmit each payload length under identical radio settings and environmental conditions.
+3. Repeat each measurement using a predefined number of packets.
+4. Compare packet delivery, airtime, and reception measurements.
+
+**Measurements:** Payload size, packet delivery ratio, RSSI, SNR, and packet airtime.
+
+**Expected Outcome:** The effect of payload size on communication performance and transmission duration is quantified.
+
+#### Test 06: Raw Transmission Stability
+
+**Objective:** Evaluate the stability of repeated raw packet transmission and reception.
+
+**Procedure:**
+
+1. Configure the transmitter to send a predefined number of packets at a fixed interval.
+2. Conduct short repeated-transmission trials and a longer-duration trial.
+3. Monitor transmitter errors, receiver packet counts, unexpected resets, and radio responsiveness.
+4. Compare transmitted and received packet sequences.
+
+**Measurements:** Transmission attempts, successful transmission operations, received packets, packet loss, runtime errors, resets, and test duration.
+
+**Expected Outcome:** The radio subsystem remains operational during sustained transmission, and any failures or instability are documented.
+
+#### Test 07: Raw Distance and Packet Delivery Ratio
+
+**Objective:** Evaluate the effect of separation distance on LoRa communication performance.
+
+**Procedure:**
+
+1. Establish a baseline using a fixed radio configuration and antenna arrangement.
+2. Place the nodes at multiple measured distances.
+3. Transmit a predefined number of packets at each distance.
+4. Record successful receptions and available RSSI and SNR measurements.
+5. Repeat trials where practical to account for environmental variability.
+
+**Measurements:** Distance, packets transmitted, packets received, packet delivery ratio, packet loss rate, RSSI, and SNR.
+
+**Expected Outcome:** The relationship between distance and communication reliability is characterized under the tested conditions.
+
+#### Test 08: Raw Radio Parameter Comparison
+
+**Objective:** Determine how LoRa radio configuration affects communication performance.
+
+**Parameters to investigate:**
+
+* Spreading factor.
+* Bandwidth.
+* Coding rate.
+* Transmit power.
+
+**Procedure:**
+
+1. Establish a baseline radio configuration.
+2. Change one parameter at a time while keeping other settings constant.
+3. Repeat measurements for each supported configuration.
+4. Use the same payload size, distance, antenna setup, and test environment for each comparison.
+5. Record the results and identify promising configurations for subsequent experiments.
+
+**Measurements:** Radio configuration, packet delivery ratio, packet loss, RSSI, SNR, and airtime.
+
+**Expected Outcome:** The performance trade-offs associated with different radio configurations are quantified.
+
+All configurations must be supported by the SX1278 hardware and software and must comply with applicable radio regulations.
+
+#### Test 09: Raw Environmental Comparison
+
+**Objective:** Evaluate the influence of environmental conditions on raw LoRa communication.
+
+**Environments to investigate:**
+
+* Open line-of-sight environments.
+* Urban or built-up environments.
+* Rural environments.
+* Areas with vegetation or other obstructions.
+
+**Procedure:**
+
+1. Select and document representative test locations.
+2. Use the same radio settings, payload size, and antenna arrangement for each comparison.
+3. Measure communication performance at selected distances.
+4. Record the environment, obstruction characteristics, and other relevant conditions.
+5. Repeat trials where practical.
+
+**Measurements:** Environment type, distance, packet delivery ratio, packet loss, RSSI, SNR, and radio configuration.
+
+**Expected Outcome:** Differences in radio performance across the selected environments are quantified.
+
+#### Test 10: Raw Mobility Test
+
+**Objective:** Evaluate LoRa communication performance when the transmitter or receiver is moving.
+
+**Procedure:**
+
+1. Establish a stationary-node baseline.
+2. Repeat transmissions with one node moving under controlled and documented conditions.
+3. Record the approximate separation distance and movement conditions during the experiment.
+4. Compare the results against the stationary baseline.
+
+**Measurements:** Node movement, approximate speed, distance, packet delivery ratio, RSSI, SNR, and reception timing.
+
+**Expected Outcome:** The influence of mobility and changing propagation conditions on raw LoRa communication is characterized.
+
+## 5. Phase B — Final Application Packet Testing
+
+### 5.1 Overview
+
+The second phase evaluates the LoRa communication subsystem using the finalized AutoLink RadioSense application packet structure.
+
+The complete packet will include the fields defined in the project's approved packet specification. These may include message type, source or destination identifiers, sequence number, payload length, application data, and any additional fields agreed upon by the development team.
+
+The exact field ordering, data types, encoding, and packet length must be documented before the final-packet tests are implemented.
+
+This phase verifies both packet correctness and communication performance when the actual application protocol is used.
+
+### 5.2 Test Cases
+
+#### Test 11: Final Packet Construction
+
+**Objective:** Verify that the transmitter constructs the complete application packet correctly.
+
+**Procedure:**
+
+1. Define test values for every packet field.
+2. Construct the packet according to the approved packet specification.
+3. Inspect the serialized byte sequence.
+4. Verify field ordering, lengths, encoding, and expected values.
+5. Compare the generated packet against an independently defined expected byte sequence.
+
+**Measurements:** Expected and actual packet bytes, field values, packet length, and construction errors.
+
+**Expected Outcome:** The generated packet conforms to the approved application packet specification.
+
+#### Test 12: Final Packet Transmission
+
+**Objective:** Verify transmission of the complete application packet.
+
+**Procedure:**
+
+1. Construct a valid application packet.
+2. Transmit it using the configured LoRa radio.
+3. Display the packet identifier, length, and transmission result.
+4. Repeat the experiment using different valid field values and payload contents.
+
+**Measurements:** Transmission attempts, successful transmission operations, packet lengths, errors, and transmission timing.
+
+**Expected Outcome:** The complete application packet can be submitted for transmission without construction or transmission errors.
+
+#### Test 13: Final Packet Reception
+
+**Objective:** Verify reception of the complete application packet.
+
+**Procedure:**
+
+1. Configure the receiver to receive packets from the transmitter.
+2. Transmit valid application packets.
+3. Capture the received bytes and packet length.
+4. Compare the received byte sequence with the transmitted sequence.
+
+**Measurements:** Received packet count, received length, byte comparison results, RSSI, and SNR.
+
+**Expected Outcome:** The receiver obtains the complete transmitted packet when reception succeeds.
+
+#### Test 14: Final Packet Parsing
+
+**Objective:** Verify that the receiver extracts every application packet field correctly.
+
+**Procedure:**
+
+1. Transmit packets containing known field values.
+2. Receive and parse each packet using the implemented parser.
+3. Compare the extracted values against the original values.
+4. Test supported minimum and maximum field values, including relevant numeric boundaries.
+
+**Measurements:** Field-level comparison results, parsing errors, invalid field values, and packet length.
+
+**Expected Outcome:** Valid packets are parsed correctly, and invalid field values or encodings are handled according to the packet specification.
+
+#### Test 15: Final Packet Integrity
+
+**Objective:** Verify the integrity-validation mechanism defined by the application packet protocol.
+
+**Procedure:**
+
+1. Transmit valid packets and verify that they pass integrity validation.
+2. Where applicable, provide test packets with intentionally modified bytes or invalid integrity values.
+3. Verify that the receiver detects and rejects invalid packets according to the protocol.
+4. Record the validation outcome.
+
+**Measurements:** Valid packets accepted, invalid packets rejected, detected integrity failures, and false acceptance or rejection events.
+
+**Expected Outcome:** The application-level integrity mechanism behaves according to its specification.
+
+If the application protocol does not define a checksum or other integrity field, this test must be adapted to the actual available validation mechanism rather than assuming one exists.
+
+#### Test 16: Final Packet Boundary Validation
+
+**Objective:** Verify safe handling of invalid packet lengths, truncated packets, and malformed application packets.
+
+**Procedure:**
+
+1. Test the minimum and maximum supported packet lengths.
+2. Provide truncated packets and packets with inconsistent length fields.
+3. Test invalid field encodings and malformed headers where applicable.
+4. Verify that the parser rejects invalid data without crashing or corrupting memory.
+
+**Measurements:** Packet length, validation outcome, parser errors, rejected packet count, and unexpected firmware failures.
+
+**Expected Outcome:** The application handles malformed packets safely and consistently.
+
+#### Test 17: Final Packet PDR and Latency
+
+**Objective:** Measure communication reliability and reception timing using the complete application packet format.
+
+**Procedure:**
+
+1. Transmit numbered application packets at a controlled interval.
+2. Match transmitter records with receiver records.
+3. Identify missing, duplicated, or out-of-order packets.
+4. Calculate packet delivery ratio and packet loss rate.
+5. Measure reception latency using a suitable timing method.
+
+**Measurements:** Packets transmitted, packets received, PDR, packet loss, duplicates, ordering errors, latency, RSSI, and SNR.
+
+**Expected Outcome:** The reliability and timing performance of the complete application packet is quantified.
+
+One-way latency measurements require synchronized clocks or another validated timing method. The timing method must be documented.
+
+#### Test 18: Final Packet Radio Parameter Comparison
+
+**Objective:** Determine how radio configuration affects transmission and reception of the complete application packet.
+
+**Procedure:**
+
+1. Select the final application packet format and a fixed payload.
+2. Vary spreading factor, bandwidth, coding rate, and transmit power systematically.
+3. Keep distance, environment, antenna setup, and traffic conditions controlled.
+4. Repeat measurements for each configuration.
+5. Compare results with those obtained in the raw radio parameter experiments.
+
+**Measurements:** Radio settings, PDR, packet loss, RSSI, SNR, airtime, and latency.
+
+**Expected Outcome:** Suitable radio configurations are identified for the complete application packet.
+
+#### Test 19: Final Packet Environmental Comparison
+
+**Objective:** Evaluate the performance of the complete application packet under different environmental conditions.
+
+**Procedure:**
+
+1. Select representative LOS, built-up, and rural or vegetated test locations.
+2. Use the same packet structure and controlled radio configuration for each comparison.
+3. Repeat measurements at selected distances.
+4. Record environmental conditions and communication results.
+5. Compare the findings with the raw-packet environmental experiments.
+
+**Measurements:** Environment, distance, radio settings, PDR, packet loss, RSSI, SNR, and latency.
+
+**Expected Outcome:** The environmental effects on communication using the finalized packet format are quantified.
+
+#### Test 20: Final Packet Stress and Stability
+
+**Objective:** Verify the operational stability of the communication subsystem while transmitting and receiving complete application packets.
+
+**Procedure:**
+
+1. Transmit a predefined sequence of application packets for an extended period.
+2. Include normal valid packets and controlled malformed-packet cases where appropriate.
+3. Monitor packet reception, parsing failures, integrity failures, and firmware behaviour.
+4. Record unexpected resets, loss of responsiveness, and other operational failures.
+5. Summarize the results at the end of the trial.
+
+**Measurements:** Transmission attempts, received packets, PDR, packet loss, parsing errors, integrity failures, runtime errors, unexpected resets, and test duration.
+
+**Expected Outcome:** The complete-packet implementation operates reliably during sustained testing and handles invalid input safely.
+
+## 6. Experimental Data Collection
+
+A structured dataset will be maintained throughout the testing process. The dataset will support comparisons between radio configurations, packet formats, distances, and environmental conditions.
+
+### 6.1 Recommended Dataset Fields
+
+**Experiment identification**
+
+* Experiment ID.
+* Test case ID.
+* Trial ID.
+* Date and time.
+* Transmitter and receiver identifiers.
+
+**Environmental information**
+
+* Environment type.
+* Test location or location identifier.
+* Separation distance.
+* Antenna height and orientation.
+* Obstruction characteristics.
+* Weather conditions where relevant.
+* Mobility status and approximate speed where applicable.
+
+**Radio configuration**
+
+* Operating frequency.
+* Spreading factor.
+* Bandwidth.
+* Coding rate.
+* Transmit power.
+* Antenna configuration.
+
+**Packet information**
+
+* Packet format: raw or final application packet.
+* Packet sequence number used by the test harness.
+* Payload length.
+* Total transmitted packet length.
+* Transmission timestamp.
+* Reception timestamp where available.
+
+**Performance measurements**
+
+* Transmission attempts.
+* Successful transmission operations.
+* Successfully received packets.
+* Missing, duplicate, or out-of-order packets.
+* Packet delivery ratio.
+* Packet loss rate.
+* RSSI.
+* SNR.
+* Airtime.
+* Reception latency where measurable.
+* Runtime errors and unexpected resets.
+
+### 6.2 Data Logging Method
+
+The transmitter and receiver should generate machine-readable logs, preferably CSV files. Each transmission attempt should have a corresponding record, including attempts for which no reception is subsequently observed.
+
+The transmitter and receiver logs should be linked using a unique experiment identifier, trial identifier, and packet sequence number. Receiver-side records should include reception status and available radio measurements.
+
+Missing RSSI or SNR values must not be replaced with invented values for packets that were not received.
+
+The logging system should also record the configured radio parameters and the test conditions to ensure that each measurement can be interpreted and reproduced.
+
+## 7. Performance Calculations
+
+### 7.1 Packet Delivery Ratio
+
+Packet delivery ratio measures the proportion of transmitted packets successfully received.
+
+PDR (%) = (Successfully received packets / Packets transmitted) × 100
+
+### 7.2 Packet Loss Rate
+
+Packet loss rate measures the proportion of transmitted packets that were not received.
+
+Packet Loss Rate (%) = 100 − PDR (%)
+
+### 7.3 Average RSSI and SNR
+
+Average RSSI and average SNR will be calculated from successfully received packets with valid measurements. Their distributions and standard deviations should also be examined where sufficient samples are available.
+
+### 7.4 Transmission Airtime
+
+Airtime represents the duration for which a packet occupies the radio channel. It should be obtained from a suitable calculation or measurement method consistent with the configured LoRa parameters.
+
+### 7.5 Reception Latency
+
+Reception latency measures the time between packet transmission and reception using a validated timing method. The timing method and its limitations must be documented.
+
+## 8. Experimental Control and Reproducibility
+
+To ensure that results are reliable and comparable, the following practices will be followed:
+
+1. Change one radio parameter at a time during initial parameter characterization.
+2. Maintain consistent payload sizes, antenna arrangements, and distances during controlled comparisons.
+3. Use the same experimental procedure and logging format across trials.
+4. Repeat trials to assess variability and avoid drawing conclusions from isolated measurements.
+5. Record the exact radio configuration and environmental conditions for every experiment.
+6. Separate raw-radio experiments from final-packet experiments in the dataset.
+7. Compare raw and final packets at both equal total packet lengths and equal application-payload lengths where relevant.
+8. Document any unexpected events, equipment changes, or invalid trials rather than silently removing them.
+9. Observe applicable frequency, transmit-power, duty-cycle, and other regulatory requirements.
+
+## 9. Recommended Implementation Order
+
+The system tests will be implemented in the following order:
+
+1. Complete and retain the existing initialization, raw transmission, and raw reception tests.
+2. Implement raw payload integrity, packet size, and transmission stability tests.
+3. Develop the experimental logging mechanism and packet sequence tracking.
+4. Conduct raw distance and packet delivery experiments.
+5. Conduct controlled radio parameter comparisons.
+6. Conduct environmental and mobility experiments.
+7. Finalize the application packet specification.
+8. Implement final packet construction, transmission, reception, parsing, integrity, and boundary tests.
+9. Conduct final-packet reliability, radio parameter, environmental, and stress tests.
+10. Consolidate and analyze the experimental dataset.
+
+## 10. Proposed Directory Structure
+
+```text
+test/
+├── unit/
+└── system/
+    ├── 01_LoRa_Initialization/
+    ├── 02_Raw_Transmission/
+    ├── 03_Raw_Reception/
+    ├── 04_Raw_Payload_Integrity/
+    ├── 05_Raw_Packet_Size/
+    ├── 06_Raw_Transmission_Stability/
+    ├── 07_Raw_Distance_PDR/
+    ├── 08_Raw_Radio_Parameter_Comparison/
+    ├── 09_Raw_Environment_Comparison/
+    ├── 10_Raw_Mobility_Test/
+    ├── 11_Final_Packet_Construction/
+    ├── 12_Final_Packet_Transmission/
+    ├── 13_Final_Packet_Reception/
+    ├── 14_Final_Packet_Parsing/
+    ├── 15_Final_Packet_Integrity/
+    ├── 16_Final_Packet_Boundary_Validation/
+    ├── 17_Final_Packet_PDR_Latency/
+    ├── 18_Final_Packet_Radio_Parameter_Comparison/
+    ├── 19_Final_Packet_Environment_Comparison/
+    ├── 20_Final_Packet_Stress_Stability/
+    └── README.md
+```
+
+This directory structure represents the 20 logical system test cases. Tests with similar implementations may reuse common test utilities and configurable firmware where appropriate.
+
+The exact source-file layout within each directory must remain compatible with the project's PlatformIO build environments and test configuration.
+
+## 11. Expected Outcomes
+
+The proposed testing methodology will establish a systematic process for validating the AutoLink RadioSense LoRa communication subsystem.
+
+The raw-packet testing phase will establish baseline radio performance and characterize the effects of radio parameters, distance, environmental conditions, and mobility.
+
+The final-packet testing phase will verify the correctness and operational reliability of the application packet structure while quantifying its communication performance under comparable experimental conditions.
+
+The resulting dataset will provide empirical evidence for selecting appropriate radio configurations and evaluating the communication subsystem. These findings can subsequently support the development and evaluation of higher-level AutoLink RadioSense functionality, including link-quality assessment and multi-hop routing.
+
+The testing framework will therefore serve as the foundation for both reliable system implementation and reproducible experimental evaluation of the AutoLink RadioSense project.

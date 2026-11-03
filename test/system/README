@@ -1,0 +1,98 @@
+# System-Level Testing
+
+The `system/` directory contains tests used to verify the operation of the AutoLink RadioSense system using the actual hardware and integrated software components.
+
+Unlike unit tests, system-level tests evaluate multiple components working together under realistic operating conditions. These tests may involve the ESP32 microcontroller, SX1278 LoRa transceiver, firmware modules, wireless communication, and other system components.
+
+## Purpose
+
+The purpose of system-level testing is to verify that the implemented hardware and software operate correctly as an integrated system.
+
+Typical system-level tests may include:
+
+* LoRa module initialization and configuration
+* Raw LoRa packet transmission and reception
+* ESP32-to-ESP32 LoRa communication
+* Packet transmission and reception testing
+* Beacon transmission and retrieval
+* Neighbour discovery and communication
+* Link quality measurements
+* Multi-hop communication
+* Relay selection and forwarding
+* End-to-end communication testing
+* Hardware and wireless communication validation
+
+## Organization
+
+System-level tests are organized according to the system functionality being evaluated.
+
+test/
+├── unit/
+│   └── ...                         # Isolated functions/classes; no complete radio link required
+└── system/
+    ├── 01_LoRa_Initialization/     
+    ├── 02_Raw_Transmission/        
+    ├── 03_Raw_Reception/           
+    ├── 04_Repeated_Raw_Transmission/
+    ├── 05_Raw_Payload_Length/
+    ├── 06_Transmission_Interval/
+    ├── 07_Long_Duration_Operation/
+    ├── 08_Payload_Integrity/
+    ├── 09_Distance_PDR/
+    ├── 10_Spreading_Factor_Comparison/
+    ├── 11_Bandwidth_Comparison/
+    ├── 12_Coding_Rate_Comparison/
+    ├── 13_Transmit_Power_Comparison/
+    ├── 14_Antenna_Orientation_Placement/
+    ├── 15_Bidirectional_Communication/
+    ├── 16_LOS_Baseline/
+    ├── 17_Urban_Built_Up/
+    ├── 18_Rural_Vegetation/
+    ├── 19_Obstruction_Comparison/
+    ├── 20_Static_vs_Moving/
+    ├── 21_Channel_Occupancy_Interference/
+    ├── 22_Final_Packet_TX_RX/
+    ├── 23_Final_Packet_Field_Encoding/
+    ├── 24_Final_Packet_Integrity/
+    ├── 25_Final_Packet_Boundary_Handling/
+    ├── 26_Sustained_Final_Packet/
+    └── 27_Raw_vs_Final_Performance/
+
+Additional test categories may be added as the system develops.
+
+## Testing Approach
+
+System-level tests are executed on the actual target hardware and are intended to reproduce the operating conditions of the AutoLink RadioSense system as closely as practical.
+
+Each test should clearly define:
+
+* Test objective
+* Required hardware
+* Required firmware/software
+* Test configuration
+* Input or test conditions
+* Expected behavior
+* Observed results
+* Pass/fail outcome
+
+## Hardware Testing
+
+System-level tests may require two or more physical nodes depending on the functionality being evaluated.
+
+For example, a basic LoRa communication test may use:
+
+```text
+ESP32 + SX1278                    ESP32 + SX1278
+      │                                  │
+      │          LoRa RF Link            │
+      └───────────────↔──────────────────┘
+          Transmitter       Receiver
+```
+
+The initial LoRa tests may use simple raw payloads without application-level packet headers or fields. More advanced tests will progressively introduce the packet structures and communication mechanisms defined by the AutoLink RadioSense system.
+
+## Scope
+
+System-level testing verifies the behavior of the integrated system and physical hardware. It complements unit testing by identifying issues that may only appear when multiple components operate together.
+
+The results obtained from system-level testing will be used to validate the functionality, reliability, and communication performance of the AutoLink RadioSense system.

@@ -1,0 +1,598 @@
+## Document 01 - Project-Wide Headers and Include Path Best Practices
+# AutoLink RadioSense
+
+
+## 1. Purpose of This Document
+
+This document explains how project header files should be organized and included in the **AutoLink RadioSense** PlatformIO project.
+
+The purpose is to establish a clean and maintainable approach to:
+
+* Organizing project-specific header files
+* Using the `include/` directory correctly
+* Including headers from different project modules
+* Avoiding long and fragile relative paths
+* Understanding the difference between project headers and external libraries
+* Deciding where a header file should be placed
+* Maintaining a scalable source-code structure as the project grows
+
+This document is intended to serve as a development reference for all contributors to the project.
+
+
+## 2. Understanding the Project Structure
+
+The AutoLink RadioSense PlatformIO project has several important directories. Each directory has a different purpose.
+
+A simplified structure is:
+
+AutoLink RadioSense/
+│
+├── include/
+│
+├── lib/
+│
+├── src/
+│   ├── main.cpp
+│   │
+│   └── Core/
+│       ├── LoRa_Manager.cpp
+│       └── LoRa_Manager.h
+│
+├── test/
+│
+└── platformio.ini
+
+
+## 3. What Is a Header File?
+
+A header file normally contains declarations or definitions that other source files need to know about.
+
+For example:
+
+```cpp
+class LoRa_Manager
+{
+public:
+    bool initialize();
+};
+```
+
+The implementation can then be placed in:
+
+```text
+LoRa_Manager.cpp
+```
+
+while the declaration is placed in:
+
+```text
+LoRa_Manager.h
+```
+
+Another source file can include the header:
+
+```cpp
+#include "LoRa_Manager.h"
+```
+
+and use the functionality provided by the module.
+
+This separation helps keep the project modular.
+
+
+## 4. Module-Specific Headers vs Project-Wide Headers
+
+One of the most important decisions is determining whether a header is **module-specific** or **project-wide**.
+
+## 4.1 Module-Specific Headers
+
+A module-specific header describes one particular component of the application.
+
+For example:
+
+```text
+src/
+└── Core/
+    ├── LoRa_Manager.cpp
+    └── LoRa_Manager.h
+```
+
+`LoRa_Manager.h` belongs to the LoRa Manager module.
+
+Therefore, it should normally remain alongside:
+
+```text
+LoRa_Manager.cpp
+```
+
+Similarly, future modules may have:
+
+```text
+src/
+├── Beacon_Management/
+│   ├── Beacon_Manager.cpp
+│   └── Beacon_Manager.h
+│
+├── Neighbour_Management/
+│   ├── Neighbour_Manager.cpp
+│   └── Neighbour_Manager.h
+│
+└── Multihop_Forwarding/
+    ├── Routing_Manager.cpp
+    └── Routing_Manager.h
+```
+
+These headers describe their respective modules and should generally remain within those modules.
+
+---
+
+# 5. What Belongs in `include/`?
+
+The `include/` directory is intended for **project-wide headers**.
+
+A project-wide header contains information that is shared by several independent modules.
+
+Examples include:
+
+* Project configuration
+* Common data types
+* Common structures
+* Shared enumerations
+* Global constants
+* Common interfaces
+* System-wide definitions
+
+For example:
+
+```text
+include/
+├── Project_Config.h
+└── Network_Types.h
+```
+
+---
+
+# 6. Project Configuration Header
+
+A project-wide configuration header can contain common configuration values.
+
+For example:
+
+```cpp
+#pragma once
+
+#define NODE_ID 1
+
+#define SERIAL_BAUD_RATE 115200
+
+#define LORA_FREQUENCY 433E6
+#define LORA_SPREADING_FACTOR 7
+#define LORA_BANDWIDTH 125E3
+#define LORA_TX_POWER 17
+```
+
+Multiple modules can then use:
+
+```cpp
+#include "Project_Config.h"
+```
+
+Instead of defining the same values separately in multiple source files.
+
+This prevents inconsistent configuration.
+
+---
+
+## 7. Common Data Types
+
+Another good use of `include/` is defining data structures shared across multiple subsystems. Instead of defining the structure separately in each subsystem, the structure is defined once in a project-wide header.
+
+For example:
+
+```text
+include/
+└── Network_Types.h
+```
+
+could contain:
+
+```cpp
+#pragma once
+
+struct GPSPosition
+{
+    float latitude;
+    float longitude;
+};
+
+struct VehicleState
+{
+    uint32_t nodeId;
+    GPSPosition position;
+    float heading;
+    float speed;
+    uint32_t timestamp;
+};
+```
+
+
+## 8. Why Long Relative Paths Are a Problem
+
+A common mistake is using long relative paths such as:
+
+```cpp
+#include "../../../src/Core/LoRa_Manager.h"
+```
+
+This technically tells the compiler how to navigate through the directory structure.
+
+For example:
+
+```text
+../../../
+```
+
+means:
+
+```text
+go up three directories
+```
+
+This can work, but it is difficult to read and maintain. It also creates a strong dependency between the source file and the exact physical directory structure. If the project structure changes later, the include statement may break.
+
+For example:
+
+```text
+../../../src/Core/LoRa_Manager.h
+```
+
+could become invalid if:
+
+* A folder is renamed
+* A module is moved
+* A subsystem is reorganized
+* A source file is moved deeper into the project
+
+Therefore, long relative paths should generally be avoided when a cleaner include-path mechanism is available.
+
+
+## 9. Using `include/` to Avoid Ugly Paths
+
+The `include/` directory is automatically treated by PlatformIO as a project include directory.
+
+Therefore, if we have:
+
+```text
+include/
+└── Project_Config.h
+```
+
+a source file anywhere within the project can use:
+
+```cpp
+#include "Project_Config.h"
+```
+
+There is no need to write:
+
+```cpp
+#include "../../../include/Project_Config.h"
+```
+
+This is cleaner and much easier to maintain.
+
+The important idea is:
+
+```text
+Physical location:
+    include/Project_Config.h
+
+Source code:
+    #include "Project_Config.h"
+```
+
+The source code does not need to know the physical path to the `include/` directory.
+
+
+## 10. `include/` Is Not a Place for Every Header
+
+It is important not to misunderstand the purpose of `include/`. 
+We should NOT automatically move every `.h` file into `include/`.
+
+For example:
+
+```text
+src/Core/LoRa_Manager.h
+```
+
+is a module-specific header.
+
+It should normally remain with:
+
+```text
+src/Core/LoRa_Manager.cpp
+```
+
+The following distinction is useful:
+
+```text
+Module-specific
+        ↓
+src/
+
+Project-wide/shared
+        ↓
+include/
+
+External libraries
+        ↓
+lib/
+```
+
+
+## 11. Recommended Include Style
+
+For project headers, use quotation marks:
+
+```cpp
+#include "Project_Config.h"
+#include "Network_Types.h"
+```
+
+For external libraries, use angle brackets:
+
+```cpp
+#include <LoRa.h>
+#include <SPI.h>
+```
+
+This provides a useful visual distinction between:
+
+**Our project code:**
+
+```cpp
+#include "Network_Types.h"
+```
+
+and:
+
+**External dependencies:**
+
+```cpp
+#include <LoRa.h>
+```
+
+This is primarily a project convention, but it makes the code easier to understand.
+
+
+
+## 12. Including Module Headers
+
+When one application module needs another module, avoid unnecessary filesystem navigation.
+
+For example, if the project contains:
+
+```text
+src/
+├── main.cpp
+│
+└── Core/
+    └── LoRa_Manager.h
+```
+
+`main.cpp` can use:
+
+```cpp
+#include "Core/LoRa_Manager.h"
+```
+
+instead of:
+
+```cpp
+#include "../src/Core/LoRa_Manager.h"
+```
+
+or:
+
+```cpp
+#include "../../src/Core/LoRa_Manager.h"
+```
+
+The goal is to express the logical relationship between modules rather than manually navigating the filesystem.
+
+---
+
+# 13. Avoiding a "Universal Header"
+
+It may be tempting to create one header such as:
+
+```text
+include/
+└── Project_Headers.h
+```
+
+and place every project header inside it:
+
+```cpp
+#include "Project_Headers.h"
+```
+
+Although this can work, it is generally not recommended for a growing project.
+
+For example:
+
+```cpp
+#include "Project_Headers.h"
+```
+
+could eventually include:
+
+```cpp
+#include "../src/Core/LoRa_Manager.h"
+#include "../src/Beacon_Management/Beacon_Manager.h"
+#include "../src/Neighbour_Management/Neighbour_Manager.h"
+#include "../src/Link_Quality/Link_Quality_Manager.h"
+#include "../src/Multihop_Forwarding/Routing_Manager.h"
+```
+
+This creates unnecessary dependencies.
+
+A module should normally include only the headers it actually needs.
+
+For example:
+
+```cpp
+#include "Network_Types.h"
+#include "Project_Config.h"
+#include "Core/LoRa_Manager.h"
+```
+
+is preferable to including one huge header containing everything.
+
+---
+
+# 14. Use `#pragma once`
+
+Project headers should generally contain:
+
+```cpp
+#pragma once
+```
+
+at the beginning.
+
+For example:
+
+```cpp
+#pragma once
+
+struct GPSPosition
+{
+    float latitude;
+    float longitude;
+};
+```
+
+`#pragma once` prevents the same header from being included multiple times during compilation.
+
+This is especially useful when multiple headers depend on the same common header.
+
+
+## 15. Practical Decision Rule
+
+When creating a new `.h` file, ask the following question:
+
+> "Is this header describing a specific module, or is it defining something that multiple independent modules need to share?"
+
+### If it describes a specific module:
+
+Put it next to that module's `.cpp` file.
+
+Example:
+
+```text
+src/Beacon_Management/Beacon_Manager.h
+```
+
+### If it contains information shared across many modules:
+
+Put it in:
+
+```text
+include/
+```
+
+Example:
+
+```text
+include/Network_Types.h
+```
+
+### If it belongs to an external library:
+
+Put the external library in:
+
+```text
+lib/
+```
+
+Example:
+
+```text
+lib/LoRa/
+```
+
+---
+
+# 16. Key Principle
+
+The purpose of this organization is not merely to make the project look tidy.
+
+It reduces coupling between the **logical software architecture** and the **physical filesystem structure**.
+
+Avoid code such as:
+
+```cpp
+#include "../../../src/Core/LoRa_Manager.h"
+```
+
+when a cleaner project include path can be used.
+
+Prefer:
+
+```cpp
+#include "Project_Config.h"
+```
+
+for project-wide headers.
+
+Prefer:
+
+```cpp
+#include "Core/LoRa_Manager.h"
+```
+
+for application modules.
+
+Prefer:
+
+```cpp
+#include <LoRa.h>
+```
+
+for external libraries.
+
+This makes the code easier to:
+
+* Read
+* Understand
+* Move
+* Refactor
+* Maintain
+* Share between team members
+* Extend as the project grows
+
+---
+
+# 17. Summary
+
+The `include/` directory should be viewed as the **shared interface area of the project**, not as a replacement for the `src/` directory.
+
+The recommended organization is:
+
+```text
+include/
+    Project-wide shared headers
+
+src/
+    Application modules and their module-specific headers
+
+lib/
+    External libraries
+```
+
+The most important rule is:
+
+> **Keep module-specific headers with their modules. Put genuinely shared project-wide definitions in `include/`. Avoid long relative paths when PlatformIO's include directories can provide a cleaner solution.**
+
+This approach provides a clean foundation for the continued development of the AutoLink RadioSense multi-module firmware.

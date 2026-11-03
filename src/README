@@ -1,0 +1,37 @@
+# Source Code (`src`)
+
+The `src` directory contains the main source code of the **AutoLink RadioSense** ESP32 firmware.
+
+All core application logic and system-specific implementations are developed and organized within this directory. The source code is structured hierarchically into modules and subsystems to improve maintainability, readability, testing, and future development.
+
+The core sub folder must contain program code needed to access for the whole project, or else being resused by multile novelties.
+Other code must reside within the relavnt novelty folder, when orgazining the code within the novelty folders, follow the relavent WBS.
+
+The directory is organized according to the project's major research novelties and their associated subsystems. Common system-level functionality may also be maintained in a shared `core` section.
+
+Typical subsystems may include:
+
+* Beacon Management
+* Neighbour Management
+* Link Quality Assessment
+* Multi-Hop Forwarding
+* Routing and Relay Selection
+* LoRa Communication
+* GPS Management
+* Other supporting system components
+
+Each subsystem may contain its own `.cpp` implementation files and `.h` header files.
+
+The `main.cpp` file serves as the primary entry point of the firmware and coordinates the initialization and execution of the different subsystems.
+
+src
+  |--Core (Common code)
+  |  
+  |--Multihop Routing & Relay 
+  |  
+  |--Route Aware Hazards Filtering
+  |
+  |--Hazard Memory Network
+  |  
+  |--Store Carry Forward
+  
