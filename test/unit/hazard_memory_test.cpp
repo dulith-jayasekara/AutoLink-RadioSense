@@ -1,9 +1,5 @@
 #include "Hazard_Repository.h"
 
-#include <cassert>
-#include <iostream>
-#include <limits>
-
 namespace
 {
 HazardRecord makeHazard(uint32_t id)

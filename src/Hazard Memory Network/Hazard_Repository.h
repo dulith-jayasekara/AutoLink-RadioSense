@@ -1,6 +1,8 @@
 #pragma once
 
-#include <stddef.h>
+#include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
 #include "Hazard_Record.h"
 
 class HazardRepository

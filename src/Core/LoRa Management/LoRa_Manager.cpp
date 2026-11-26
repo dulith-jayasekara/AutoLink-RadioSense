@@ -1,5 +1,4 @@
-#include "Project_Headers.h"
-#include "Library_Headers.h"
+#include "LoRa_Manager.h"
 
 void LoRa_Initialization()
 {

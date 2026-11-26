@@ -1,8 +1,11 @@
-#include "Time_Manager.h"
+/**
+ * @file Time_Manager.cpp
+ * @brief Phone timestamp parsing and ESP32 system-clock synchronization.
+ * @details Owns timestamp parsing, accepted-range validation, and clock maintenance.
+ * Relationships: Used by Portal_Request_Handlers.cpp and GPS_Manager.cpp.
+ */
 
-#include <Arduino.h>
-#include <sys/time.h>
-#include <time.h>
+#include "Time_Manager.h"
 
 namespace
 {
@@ -18,6 +21,40 @@ namespace
     uint64_t currentTimestampSeconds = 0;
     uint16_t remainingTimestampMilliseconds = 0;
     uint32_t lastTimestampUpdateMillis = 0;
+}
+
+// Parse an unsigned decimal timestamp without signs, whitespace, or overflow.
+bool Time_ParsePhoneTimestamp(
+    const String &text,
+    uint64_t &timestampMilliseconds)
+{
+    if (text.length() == 0)
+    {
+        return false;
+    }
+
+    const uint64_t maximumValue = ~static_cast<uint64_t>(0);
+    uint64_t parsedValue = 0;
+
+    for (size_t index = 0; index < text.length(); ++index)
+    {
+        const char character = text.charAt(index);
+        if (character < '0' || character > '9')
+        {
+            return false;
+        }
+
+        const uint64_t digit = static_cast<uint64_t>(character - '0');
+        if (parsedValue > (maximumValue - digit) / 10ULL)
+        {
+            return false;
+        }
+
+        parsedValue = parsedValue * 10ULL + digit;
+    }
+
+    timestampMilliseconds = parsedValue;
+    return true;
 }
 
 void Time_Initialization()

@@ -1,5 +1,4 @@
 #include "Hazard_Record.h"
-#include "Library_Headers.h"
 
 
 bool isValidHazardRecord(const HazardRecord &record)

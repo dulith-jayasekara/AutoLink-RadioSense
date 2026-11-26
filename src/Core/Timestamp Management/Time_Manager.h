@@ -1,7 +1,21 @@
+/**
+ * @file Time_Manager.h
+ * @brief Public interface for timestamp parsing and system-clock management.
+ * @details Relocated as part of the Core timestamp module refactoring.
+ */
+
 #ifndef TIME_MANAGER_H
 #define TIME_MANAGER_H
 
-#include <stdint.h>
+#include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
+
+// Parse an unsigned decimal Unix timestamp in milliseconds.
+bool Time_ParsePhoneTimestamp(
+    const String &text,
+    uint64_t &timestampMilliseconds
+);
 
 // Clear the synchronized state at startup; ESP32 system time is not assumed
 // to survive a restart or loss of power.

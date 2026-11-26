@@ -1,7 +1,9 @@
 #ifndef WIFI_MANAGER_H
 #define WIFI_MANAGER_H
 
-#include "../../include/Config.h"
+#include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
 
 #define WIFI_SSID "AUTOLINK-WIFI-" NODE_NO
 #define WIFI_PASSWORD "AutoLink123"

@@ -1,5 +1,7 @@
 #pragma once
 #include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
 
 // Maximum number of neighbours stored simultaneously.
 constexpr uint8_t MAX_NEIGHBOURS = 20;
@@ -13,7 +15,7 @@ struct NeighbourEntry{
 
     int32_t latitude;        // Degrees multiplied by 10^7
     int32_t longitude;       // Degrees multiplied by 10^7
-    uint16_t heading;        // Heading in degrees (0-359), matching BeaconPacket
+    uint16_t heading;        // Degrees (0-359), or BEACON_HEADING_UNAVAILABLE
     uint16_t speed;          // Speed in cm/s
     uint32_t timestamp;      // Sender's Unix time in seconds; 0 means unsynchronized
 

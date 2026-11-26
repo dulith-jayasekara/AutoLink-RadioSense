@@ -1,5 +1,7 @@
 #pragma once
-#include <Arduino.h>
+#include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
 
 #define PORTAL_CA_FINGERPRINT "55:36:0A:BD:5A:9A:80:F0:0B:5E:10:3F:9F:CB:8E:08:46:CE:38:9C:C0:D4:9D:A8:5D:71:4C:8F:F8:02:9D:01"
 

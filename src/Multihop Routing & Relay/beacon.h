@@ -1,37 +1,92 @@
+
 #ifndef BEACON_H
 #define BEACON_H
 
 #include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
 
-// Beacon packet configuration
+// ---------------------------------------------------------
+// BEACON PACKET CONFIGURATION
+// ---------------------------------------------------------
+
 constexpr uint8_t BEACON_PACKET_TYPE = 0x01;
 constexpr uint8_t BEACON_MAC_SIZE = 6;
 constexpr uint8_t BEACON_PACKET_SIZE = 25;
-constexpr uint32_t BEACON_INTERVAL_MS = 5000;
+constexpr uint16_t BEACON_HEADING_UNAVAILABLE = 0xFFFF;
 
-// Beacon packet structure
+
+// ---------------------------------------------------------
+// ADAPTIVE BEACON TRANSMISSION CONFIGURATION
+// ---------------------------------------------------------
+
+// Maximum interval used when the vehicle is stationary.
+constexpr uint32_t BEACON_MAX_INTERVAL_MS = 15000;
+
+// Minimum interval used when the vehicle reaches or exceeds the reference maximum speed.
+constexpr uint32_t BEACON_MIN_INTERVAL_MS = 2000;
+
+// Default interval used when vehicle speed is unavailable.
+constexpr uint32_t BEACON_DEFAULT_INTERVAL_MS = 5000;
+
+// Reference speed at which the minimum interval is reached.
+constexpr float BEACON_MAX_SPEED_KMPH = 100.0f;
+
+// Speeds below or equal to this value are considered stationary.
+constexpr float BEACON_STATIONARY_SPEED_KMPH = 1.8f;
+
+
+// ---------------------------------------------------------
+// BEACON PACKET STRUCTURE
+// ---------------------------------------------------------
+
 struct BeaconPacket {
-    uint8_t packetType;          // 1 byte
-    uint8_t nodeID[6];           // Wi-Fi MAC address: 6 bytes
-    uint16_t sequenceNumber;     // 2 bytes
-    int32_t latitude;            // 4 bytes: degrees * 10^7
-    int32_t longitude;           // 4 bytes: degrees * 10^7
-    uint16_t speed;              // 2 bytes: centimetres per second
-    uint16_t heading;            // 2 bytes: degrees (0-359)
-    uint32_t timestamp;          // 4 bytes: Unix time in seconds
+    uint8_t packetType;
+    uint8_t nodeID[6];
+    uint16_t sequenceNumber;
+    int32_t latitude;
+    int32_t longitude;
+    uint16_t speed;       // Centimetres per second
+    uint16_t heading;     // Degrees (0-359), or BEACON_HEADING_UNAVAILABLE
+    uint32_t timestamp;   // Unix time in seconds
 };
 
-// Radio measurements belong to this reception and are not transmitted in the
-// beacon payload.
+
+// Radio measurements associated with a received beacon.
 struct BeaconReceptionInfo {
-    int16_t rssi; // dBm
-    float snr;    // dB
+    int16_t rssi;
+    float snr;
 };
+
+
+// ---------------------------------------------------------
+// FUNCTION DECLARATIONS
+// ---------------------------------------------------------
 
 uint16_t generateSequenceNumber();
+
 void generateBeacon(BeaconPacket &packet);
+
 bool transmitBeacon(BeaconPacket &packet);
-bool receiveBeacon(BeaconPacket &packet, BeaconReceptionInfo &receptionInfo);
+
+bool receiveBeacon(
+    BeaconPacket &packet,
+    BeaconReceptionInfo &receptionInfo
+);
+
 void extractBeaconInformation(const BeaconPacket &packet);
+
+// Calculate the adaptive beacon transmission interval.
+uint32_t calculateBeaconInterval(
+    uint16_t speed,
+    bool speedAvailable
+);
+
+// Manage periodic adaptive beacon transmission.
+void handleBeaconTransmission(
+    uint16_t speed,
+    bool speedAvailable,
+    bool usingTemporarySpeed
+);
 
 #endif

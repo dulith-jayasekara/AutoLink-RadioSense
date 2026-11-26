@@ -1,6 +1,4 @@
 #include "Project_Headers.h"
-#include "Library_Headers.h"
-#include "Config.h"
 
 // --------------------------------------------------
 // Raw LoRa Reception System Test

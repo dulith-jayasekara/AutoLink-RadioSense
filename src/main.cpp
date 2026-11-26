@@ -1,8 +1,4 @@
 #include "Project_Headers.h"
-#include "Library_Headers.h"
-#include "Config.h"
-#include "Core/Time_Manager.h"
-
 
 HazardRepository hazardRepository;
 
@@ -69,19 +65,25 @@ void loop() {
     // Expire entries even when no new beacons arrive.
     removeExpiredNeighbours();
 
-    // Keep this packet between loop iterations so its fields can be reused for each send.
-    static BeaconPacket outgoingBeacon = {};
-    static uint32_t lastBeaconTransmit = 0;
+    GPSMotion phoneMotion = {};
+    const bool hasPhoneLocation =
+        GPS_GetVehicleMotion(phoneMotion);
 
-    const uint32_t now = millis();
-    
-    // Send periodically without delay(), so reception can still be checked between sends.
-    if (now - lastBeaconTransmit >= BEACON_INTERVAL_MS)
-    {
-        generateBeacon(outgoingBeacon);
-        transmitBeacon(outgoingBeacon);
-        lastBeaconTransmit = now;
-    }
+    // Keep the temporary speed as a fallback until the phone provides GPS speed.
+    const uint16_t currentSpeed =
+        hasPhoneLocation && phoneMotion.speedAvailable
+        ? static_cast<uint16_t>(
+            phoneMotion.speedMetersPerSecond * 100.0 + 0.5)
+        : 1667;
+    const bool speedAvailable = true;
+    const bool usingTemporarySpeed =
+        !hasPhoneLocation || !phoneMotion.speedAvailable;
+
+    // Manage adaptive beacon transmission.
+    handleBeaconTransmission(
+        currentSpeed,
+        speedAvailable,
+        usingTemporarySpeed);
 
     BeaconPacket incomingBeacon = {};
     BeaconReceptionInfo receptionInfo = {};
@@ -92,7 +94,7 @@ void loop() {
         double localLatitude = 0.0;
         double localLongitude = 0.0;
         const bool hasLocalLocation =
-            CaptivePortal_GetLocation(localLatitude, localLongitude);
+            GPS_GetLocation(localLatitude, localLongitude);
 
         // INT32_MIN is outside the valid coordinate ranges and causes the
         // neighbour module to report displacement as unavailable (NaN).

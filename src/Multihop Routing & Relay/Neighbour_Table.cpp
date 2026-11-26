@@ -1,5 +1,4 @@
-#include "Project_Headers.h"
-#include "Library_Headers.h"
+#include "Neighbour_Table.h"
 
 // Private neighbour table.
 static NeighbourEntry neighbourTable[MAX_NEIGHBOURS];
@@ -305,8 +304,15 @@ void printNeighbourTable()
         Serial.printf("Longitude: %.7f\n",
             entry.longitude / 10000000.0);
 
-        Serial.printf("Heading: %u degrees\n",
-            static_cast<unsigned int>(entry.heading));
+        if (entry.heading == BEACON_HEADING_UNAVAILABLE)
+        {
+            Serial.println("Heading: unavailable");
+        }
+        else
+        {
+            Serial.printf("Heading: %u degrees\n",
+                static_cast<unsigned int>(entry.heading));
+        }
 
         Serial.printf("Speed: %.2f m/s\n",
             entry.speed / 100.0f);

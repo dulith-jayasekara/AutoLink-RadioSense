@@ -1,0 +1,18 @@
+/* Local Leaflet assets and an offline coordinate grid; street tiles are opt-in. */
+let laptopMap=null,hazardLayers=null,locationLayers=null,streetTiles=null,mapHasFit=false;
+function mapPoints(hazards){return hazards.filter(h=>Number.isFinite(Number(h.lat))&&Math.abs(Number(h.lat))<=90&&Number.isFinite(Number(h.lon))&&Math.abs(Number(h.lon))<=180).map(h=>({hazard:h,lat:Number(h.lat),lon:Number(h.lon)}))}
+function renderMap(focus=false){
+ if(!laptopMap)return;hazardLayers.clearLayers();locationLayers.clearLayers();const points=mapPoints(statusData?.hazards||[]),bounds=[];
+ for(const point of points){const h=point.hazard;bounds.push([point.lat,point.lon]);const marker=L.circleMarker([point.lat,point.lon],{radius:9,color:terminal(h)?'#697886':'#cf6b19',fillOpacity:.8}).addTo(hazardLayers);const label=document.createElement('div');label.textContent=(types[h.type]||h.type)+' · '+h.id+' · confidence '+(h.effective_confidence??h.confidence);marker.bindTooltip(label);marker.on('click',()=>{selected=h;$('type').value=h.type;$('severity').value=h.severity;showDetail()})}
+ if(gpsFix){const lat=Number($('latitude').value),lon=Number($('longitude').value),accuracy=Number($('accuracy').value);if(Number.isFinite(lat)&&Number.isFinite(lon)&&Number.isFinite(accuracy)){bounds.push([lat,lon]);L.circle([lat,lon],{radius:accuracy,color:'#166fa1',fillOpacity:.12}).addTo(locationLayers);L.circleMarker([lat,lon],{radius:7,color:'#166fa1',fillOpacity:1}).bindTooltip('Measured laptop location · accuracy '+accuracy+' m').addTo(locationLayers);if(focus)laptopMap.setView([lat,lon],16)}}
+ if(bounds.length&&!mapHasFit){laptopMap.fitBounds(bounds,{padding:[30,30],maxZoom:16});mapHasFit=true}return bounds;
+}
+function initializeMap(){
+ if(typeof L==='undefined'){$('map-state').textContent='Local map assets unavailable. Reports and location capture still work.';return}
+ laptopMap=L.map('map').setView([6.9285,79.8626],14);hazardLayers=L.layerGroup().addTo(laptopMap);locationLayers=L.layerGroup().addTo(laptopMap);
+ const Grid=L.GridLayer.extend({createTile(coords){const tile=document.createElement('div');tile.style.cssText='border:1px solid #b9cbd7;background:#edf3f7;color:#526d80;font:11px system-ui;padding:8px';const size=this.getTileSize(),center=laptopMap.unproject(L.point(coords.x*size.x+size.x/2,coords.y*size.y+size.y/2),coords.z);tile.textContent=center.lat.toFixed(3)+', '+center.lng.toFixed(3);return tile}});new Grid({attribution:'Offline coordinate grid · no street imagery'}).addTo(laptopMap);
+ $('fit-map').onclick=()=>{const bounds=renderMap();if(bounds?.length)laptopMap.fitBounds(bounds,{padding:[30,30],maxZoom:16})};
+ $('street-map').onchange=()=>{if($('street-map').checked){streetTiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'}).addTo(laptopMap);streetTiles.on('tileerror',()=>{$('map-state').textContent='Street tiles unavailable on this connection. Offline grid, hazard markers and accuracy circles still work.'});$('map-state').textContent='Street tiles enabled. Internet is required; tile requests go to OpenStreetMap.'}else{if(streetTiles)laptopMap.removeLayer(streetTiles);streetTiles=null;$('map-state').textContent='Offline grid enabled. Map markers and location accuracy circles need no internet.'}};
+ laptopMap.on('click',event=>{if(busy||gpsBusy)return;gpsFix=null;$('latitude').value=event.latlng.lat.toFixed(6);$('longitude').value=event.latlng.lng.toFixed(6);$('accuracy').value='5';$('location-state').textContent='Manual test coordinates selected on the map (simulated 5 m accuracy). No GPS was measured.';renderMap()});renderMap();
+}
+initializeMap();

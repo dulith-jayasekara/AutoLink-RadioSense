@@ -1,6 +1,4 @@
 #include "beacon.h"
-#include "../Core/Time_Manager.h"
-#include "../Core/Captive_Portal.h"
 
 // Anonymous namespace:
 // These variables and helper functions are private to this .cpp file.
@@ -242,10 +240,16 @@ namespace
         Serial.print(packet.speed);
         Serial.println(" cm/s");
 
-        // Print heading using the units defined by the packet format.
         Serial.print("  Heading: ");
-        Serial.print(packet.heading);
-        Serial.println(" degrees");
+        if (packet.heading == BEACON_HEADING_UNAVAILABLE)
+        {
+            Serial.println("unavailable");
+        }
+        else
+        {
+            Serial.print(packet.heading);
+            Serial.println(" degrees");
+        }
 
         // The packet stores Unix time in seconds; zero means the sender's
         // clock had not been synchronized when this beacon was created.
@@ -272,23 +276,18 @@ uint16_t generateSequenceNumber()
     return sequenceNumber;
 }
 
-// Populate the fields currently available on this device. Sensor-derived
-// location, speed, heading, and time can be added here when those sources exist.
+// Populate the beacon from the latest phone fix. Adaptive transmission
+// supplies the selected speed after this function returns.
 void generateBeacon(BeaconPacket &packet)
 {
     packet.packetType = BEACON_PACKET_TYPE;
     WiFi.macAddress(packet.nodeID);
     double latitude = 0.0;
     double longitude = 0.0;
-    if (CaptivePortal_GetLocation(latitude, longitude))
+    if (GPS_GetLocation(latitude, longitude))
     {
         packet.latitude = static_cast<int32_t>(latitude * 10000000.0);
         packet.longitude = static_cast<int32_t>(longitude * 10000000.0);
-        Serial.print("Using phone location for beacon: ");
-        Serial.print(latitude, 7);
-        Serial.print(", ");
-        Serial.println(longitude, 7);
-        Serial.print("\n\n");
     }
     else
     {
@@ -297,7 +296,14 @@ void generateBeacon(BeaconPacket &packet)
         Serial.println("No phone location available; beacon coordinates are zero.");
     }
     packet.speed = 0;
-    packet.heading = 0;
+    packet.heading = BEACON_HEADING_UNAVAILABLE;
+    GPSMotion phoneMotion = {};
+    if (GPS_GetVehicleMotion(phoneMotion) &&
+        phoneMotion.headingAvailable)
+    {
+        packet.heading = static_cast<uint16_t>(
+            phoneMotion.headingDegrees + 0.5) % 360;
+    }
     // Keep using the packet's existing four-byte seconds field. Zero is the
     // established invalid marker while this node waits for phone time.
     packet.timestamp = Time_GetCurrentTimestamp();
@@ -359,6 +365,7 @@ bool transmitBeacon(BeaconPacket &packet)
         return false;
     }
 
+    Serial.println();
     Serial.println("Beacon transmitted successfully.");
     return true;
 }
@@ -456,4 +463,87 @@ void extractBeaconInformation(const BeaconPacket &packet)
 {
     Serial.println("Received beacon:");
     printBeacon(packet);
+}
+
+
+// -------------------------------------------------------------
+// ADAPTIVE BEACON INTERVAL CALCULATION
+// -------------------------------------------------------------
+
+uint32_t calculateBeaconInterval(uint16_t speed,bool speedAvailable){
+    // Use the default interval if vehicle speed is unavailable.
+    if (!speedAvailable)
+    {
+        return BEACON_DEFAULT_INTERVAL_MS;
+    }
+
+    // Convert speed from centimetres per second to kilometres per hour.
+    const float speedKmph = speed * 0.036f;
+
+    // If the vehicle is stationary, use the maximum interval.
+    if (speedKmph <= BEACON_STATIONARY_SPEED_KMPH)
+    {
+        return BEACON_MAX_INTERVAL_MS;
+    }
+
+    // If the vehicle reaches or exceeds the reference maximum speed, use the minimum interval.
+    if (speedKmph >= BEACON_MAX_SPEED_KMPH)
+    {
+        return BEACON_MIN_INTERVAL_MS;
+    }
+
+    // Calculate the linear interval reduction coefficient.
+    const float k =
+        static_cast<float>(
+            BEACON_MAX_INTERVAL_MS - BEACON_MIN_INTERVAL_MS
+        ) / BEACON_MAX_SPEED_KMPH;
+
+    // Calculate the adaptive beacon interval.
+    const float interval = BEACON_MAX_INTERVAL_MS - (k * speedKmph);
+
+    // Convert the calculated interval into milliseconds.
+    return static_cast<uint32_t>(interval + 0.5f);
+}
+
+void handleBeaconTransmission(
+    uint16_t speed,
+    bool speedAvailable,
+    bool usingTemporarySpeed)
+{
+    static BeaconPacket outgoingBeacon = {};
+    static uint32_t lastBeaconTransmit = 0;
+
+    const uint32_t now = millis();
+    const uint32_t interval = calculateBeaconInterval(speed, speedAvailable);
+
+    if (now - lastBeaconTransmit >= interval)
+    {
+        generateBeacon(outgoingBeacon);
+
+        outgoingBeacon.speed = speedAvailable ? speed : 0;
+
+        Serial.println("Adaptive Beacon Transmission");
+        if (speedAvailable)
+        {
+            const float speedKmph = speed * 0.036f;
+            Serial.print("Vehicle speed: ");
+            Serial.print(speedKmph, 2);
+            Serial.println(" km/h");
+            if (usingTemporarySpeed)
+            {
+                Serial.println("Using temporary test speed; phone GPS speed unavailable.");
+            }
+        }
+        else
+        {
+            Serial.println("Vehicle speed: unavailable");
+        }
+        Serial.print("Beacon interval: ");
+        Serial.print(interval);
+        Serial.println(" ms");
+        Serial.println();
+
+        transmitBeacon(outgoingBeacon);
+        lastBeaconTransmit = now;
+    }
 }

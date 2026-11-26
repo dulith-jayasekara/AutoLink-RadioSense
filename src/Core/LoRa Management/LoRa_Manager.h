@@ -1,6 +1,10 @@
 #ifndef LORA_MANAGER_H
 #define LORA_MANAGER_H
 
+#include "Library_Headers.h"
+#include "Project_Headers.h"
+#include "Config.h"
+
 //LoRa module pin configuration
 #define LORA_NSS 5
 #define LORA_RST 14

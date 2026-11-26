@@ -1,5 +1,4 @@
-#include "Library_Headers.h"
-#include "Project_Headers.h"
+#include "Wifi_Manager.h"
 
 // Single storage for the project-wide identifier declared in Config.h.
 String NODE_ID;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Library_Headers.h"
+#include "Config.h"
 
 enum class HazardType : uint8_t
 {
