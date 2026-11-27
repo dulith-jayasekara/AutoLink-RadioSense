@@ -95,34 +95,44 @@ void loop() {
     BeaconReceptionInfo receptionInfo = {};
     if (receiveBeacon(incomingBeacon, receptionInfo))
     {
-        extractBeaconInformation(incomingBeacon);
-
-        double localLatitude = 0.0;
-        double localLongitude = 0.0;
-        const bool hasLocalLocation =
-            GPS_GetLocation(localLatitude, localLongitude);
-
-        const int32_t localLatitudeScaled = hasLocalLocation
-            ? static_cast<int32_t>(localLatitude * 10000000.0)
-            : GPS_LATITUDE_UNAVAILABLE;
-        const int32_t localLongitudeScaled = hasLocalLocation
-            ? static_cast<int32_t>(localLongitude * 10000000.0)
-            : GPS_LONGITUDE_UNAVAILABLE;
-
-        if (addOrUpdateNeighbour(
-                incomingBeacon.nodeID,
-                incomingBeacon.sequenceNumber,
-                incomingBeacon.timestamp,
-                incomingBeacon.latitude,
-                incomingBeacon.longitude,
-                incomingBeacon.heading,
-                incomingBeacon.speed,
-                receptionInfo.rssi,
-                receptionInfo.snr,
-                localLatitudeScaled,
-                localLongitudeScaled))
+        uint16_t sequenceDifference = 0;
+        BeaconGPSUpdate gpsUpdate = BeaconGPSUpdate::Invalidate;
+        if (validateReceivedBeacon(
+                incomingBeacon,
+                sequenceDifference,
+                gpsUpdate))
         {
-            printNeighbourTable();
+            extractBeaconInformation(incomingBeacon);
+
+            double localLatitude = 0.0;
+            double localLongitude = 0.0;
+            const bool hasLocalLocation =
+                GPS_GetLocation(localLatitude, localLongitude);
+
+            const int32_t localLatitudeScaled = hasLocalLocation
+                ? static_cast<int32_t>(localLatitude * 10000000.0)
+                : GPS_LATITUDE_UNAVAILABLE;
+            const int32_t localLongitudeScaled = hasLocalLocation
+                ? static_cast<int32_t>(localLongitude * 10000000.0)
+                : GPS_LONGITUDE_UNAVAILABLE;
+
+            if (addOrUpdateNeighbour(
+                    incomingBeacon.nodeID,
+                    incomingBeacon.sequenceNumber,
+                    sequenceDifference,
+                    gpsUpdate,
+                    incomingBeacon.timestamp,
+                    incomingBeacon.latitude,
+                    incomingBeacon.longitude,
+                    incomingBeacon.heading,
+                    incomingBeacon.speed,
+                    receptionInfo.rssi,
+                    receptionInfo.snr,
+                    localLatitudeScaled,
+                    localLongitudeScaled))
+            {
+                printNeighbourTable();
+            }
         }
     }
 }

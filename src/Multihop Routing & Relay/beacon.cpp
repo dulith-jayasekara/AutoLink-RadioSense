@@ -1,4 +1,5 @@
 #include "beacon.h"
+#include "Project_Headers.h"
 
 // Anonymous namespace:
 // These variables and helper functions are private to this .cpp file.
@@ -259,6 +260,15 @@ namespace
         else
             Serial.println(packet.timestamp);
     }
+
+    void MarkGpsFieldsUnavailable(BeaconPacket &packet)
+    {
+        packet.latitude = GPS_LATITUDE_UNAVAILABLE;
+        packet.longitude = GPS_LONGITUDE_UNAVAILABLE;
+        packet.speed = GPS_SPEED_UNAVAILABLE;
+        packet.heading = GPS_HEADING_UNAVAILABLE;
+        packet.timestamp = GPS_TIMESTAMP_UNAVAILABLE;
+    }
 }
 
 
@@ -471,6 +481,239 @@ bool receiveBeacon(BeaconPacket &packet, BeaconReceptionInfo &receptionInfo)
     Serial.println(" dB");
 
     // The beacon passed the size and packet-type checks.
+    return true;
+}
+
+// BEACON PACKET AND GPS VALIDATION
+// Validate a decoded packet before it is passed to Neighbour_Table. Invalid
+// packet identity or sequence rejects the beacon; invalid GPS fields are
+// replaced with their on-wire unavailable sentinels so link metrics survive.
+bool validateReceivedBeacon(
+    BeaconPacket &packet,
+    uint16_t &sequenceDifference,
+    BeaconGPSUpdate &gpsUpdate)
+{
+    sequenceDifference = 0;
+    gpsUpdate = BeaconGPSUpdate::Invalidate;
+
+    // A node must not add its own radio loopback as a neighbour.
+    uint8_t ownNodeID[BEACON_MAC_SIZE] = {};
+    WiFi.macAddress(ownNodeID);
+    if (memcmp(packet.nodeID, ownNodeID, sizeof(ownNodeID)) == 0)
+    {
+        Serial.println("Ignored beacon from this node.");
+        return false;
+    }
+
+    uint16_t previousSequence = 0;
+    uint32_t previousGpsTimestamp = GPS_TIMESTAMP_UNAVAILABLE;
+    const bool knownNeighbour = getNeighbourValidationHistory(
+        packet.nodeID,
+        previousSequence,
+        previousGpsTimestamp);
+
+    if (knownNeighbour)
+    {
+        // Unsigned 16-bit subtraction preserves the existing rollover rule:
+        // accept forward differences below half the sequence-number space.
+        sequenceDifference =
+            static_cast<uint16_t>(packet.sequenceNumber - previousSequence);
+        if (sequenceDifference == 0 || sequenceDifference >= 32768)
+        {
+            Serial.println(
+                sequenceDifference == 0
+                    ? "Ignored duplicate beacon sequence."
+                    : "Ignored out-of-order beacon sequence.");
+            return false;
+        }
+    }
+
+    // Missing timestamps cannot be ordered or freshness-checked, so preserve
+    // the established behavior of invalidating this packet's GPS fields only.
+    if (packet.timestamp == GPS_TIMESTAMP_UNAVAILABLE ||
+        packet.timestamp == 0)
+    {
+        MarkGpsFieldsUnavailable(packet);
+        gpsUpdate = BeaconGPSUpdate::Invalidate;
+        return true;
+    }
+
+    // The packet stores whole Unix seconds; widen before multiplying so the
+    // conversion to the Core validators' millisecond units cannot overflow.
+    const uint64_t fixTimestampMilliseconds =
+        static_cast<uint64_t>(packet.timestamp) * 1000ULL;
+    if (!GPS_ValidateFixTimestamp(fixTimestampMilliseconds))
+    {
+        Serial.println("Beacon GPS timestamp is invalid; retaining link data only.");
+        MarkGpsFieldsUnavailable(packet);
+        gpsUpdate = BeaconGPSUpdate::Invalidate;
+        return true;
+    }
+
+    if (knownNeighbour &&
+        previousGpsTimestamp != GPS_TIMESTAMP_UNAVAILABLE &&
+        packet.timestamp < previousGpsTimestamp)
+    {
+        // The link packet is still useful, but older GPS measurements must
+        // not replace the neighbour's newer location or motion values.
+        gpsUpdate = BeaconGPSUpdate::Preserve;
+        Serial.println("Beacon GPS timestamp is older than the stored measurement; preserving neighbour GPS data.");
+        return true;
+    }
+
+    gpsUpdate = knownNeighbour &&
+        packet.timestamp == previousGpsTimestamp
+        ? BeaconGPSUpdate::MergeUnavailable
+        : BeaconGPSUpdate::Replace;
+
+    if (packet.latitude == GPS_LATITUDE_UNAVAILABLE ||
+        packet.longitude == GPS_LONGITUDE_UNAVAILABLE)
+    {
+        packet.latitude = GPS_LATITUDE_UNAVAILABLE;
+        packet.longitude = GPS_LONGITUDE_UNAVAILABLE;
+    }
+    else
+    {
+        // Decode the packet's degrees-times-10^7 integer representation.
+        const double latitude =
+            static_cast<double>(packet.latitude) / 10000000.0;
+        const double longitude =
+            static_cast<double>(packet.longitude) / 10000000.0;
+        if (!GPS_ValidatePosition(latitude, longitude))
+        {
+            Serial.println("Beacon position is invalid; marking coordinates unavailable.");
+            packet.latitude = GPS_LATITUDE_UNAVAILABLE;
+            packet.longitude = GPS_LONGITUDE_UNAVAILABLE;
+        }
+    }
+
+    double speedMetersPerSecond = 0.0;
+    bool speedAvailable = packet.speed != GPS_SPEED_UNAVAILABLE;
+    if (speedAvailable)
+    {
+        // GPS_ValidateSpeed uses metres per second; the packet uses cm/s.
+        speedMetersPerSecond =
+            static_cast<double>(packet.speed) / 100.0;
+        bool speedWasClamped = false;
+        if (!GPS_ValidateSpeed(speedMetersPerSecond, speedWasClamped))
+        {
+            packet.speed = GPS_SPEED_UNAVAILABLE;
+            speedAvailable = false;
+        }
+        else if (speedWasClamped)
+        {
+            // The Core validator clamps to its configured maximum. Truncate
+            // the converted cm/s value so the integer packet stays at or
+            // below that maximum.
+            packet.speed = static_cast<uint16_t>(
+                speedMetersPerSecond * 100.0);
+            Serial.println("Beacon speed exceeded the configured limit and was clamped.");
+        }
+    }
+
+    // Heading is already represented in degrees in the packet.
+    if (packet.heading != GPS_HEADING_UNAVAILABLE &&
+        !GPS_ValidateHeading(static_cast<double>(packet.heading)))
+    {
+        Serial.println("Beacon heading is invalid; marking it unavailable.");
+        packet.heading = GPS_HEADING_UNAVAILABLE;
+    }
+
+    bool measurementAgeAvailable = false;
+    uint64_t measurementAgeMilliseconds = 0;
+    if (Time_IsSynchronized())
+    {
+        uint64_t currentTimestampMilliseconds = 0;
+        if (Time_GetCurrentTimestampMilliseconds(
+                currentTimestampMilliseconds))
+        {
+            measurementAgeAvailable = true;
+            if (fixTimestampMilliseconds > currentTimestampMilliseconds)
+            {
+                const uint64_t futureOffsetMilliseconds =
+                    fixTimestampMilliseconds - currentTimestampMilliseconds;
+                if (futureOffsetMilliseconds >
+                    GPS_FUTURE_TIMESTAMP_TOLERANCE_MS)
+                {
+                    Serial.println("Beacon GPS timestamp is too far in the future; retaining link data only.");
+                    MarkGpsFieldsUnavailable(packet);
+                    gpsUpdate = BeaconGPSUpdate::Invalidate;
+                    return true;
+                }
+
+                measurementAgeMilliseconds =
+                    futureOffsetMilliseconds +
+                    GPS_TIMESTAMP_AGE_UNCERTAINTY_MS;
+            }
+            else
+            {
+                measurementAgeMilliseconds =
+                    currentTimestampMilliseconds -
+                    fixTimestampMilliseconds +
+                    GPS_TIMESTAMP_AGE_UNCERTAINTY_MS;
+            }
+        }
+        else
+        {
+            Serial.println("Local clock cannot provide GPS age; skipping beacon age checks.");
+        }
+    }
+    // Without a synchronized local clock, absolute age cannot be measured.
+    // Keep otherwise valid GPS fields and continue packet/history validation.
+
+    if (measurementAgeAvailable)
+    {
+        const double positionSpeedMetersPerSecond = speedAvailable
+            ? speedMetersPerSecond
+            : GPS_POSITION_FALLBACK_SPEED_MPS;
+        const uint32_t positionFreshnessThreshold =
+            GPS_CalculatePositionFreshnessThresholdMs(
+                positionSpeedMetersPerSecond);
+        const uint32_t positionExpirationThreshold =
+            GPS_CalculatePositionExpirationThresholdMs(
+                positionSpeedMetersPerSecond);
+
+        if (packet.latitude != GPS_LATITUDE_UNAVAILABLE &&
+            GPS_DetermineFreshnessState(
+                true,
+                measurementAgeMilliseconds,
+                positionFreshnessThreshold,
+                positionExpirationThreshold) == GPS_EXPIRED)
+        {
+            Serial.println("Beacon position has expired; marking coordinates unavailable.");
+            packet.latitude = GPS_LATITUDE_UNAVAILABLE;
+            packet.longitude = GPS_LONGITUDE_UNAVAILABLE;
+        }
+
+        if (speedAvailable)
+        {
+            const uint32_t speedExpirationThreshold =
+                speedMetersPerSecond == GPS_MIN_SPEED_MPS
+                ? GPS_ZERO_SPEED_EXPIRE_MS
+                : GPS_SPEED_EXPIRE_MS;
+            if (GPS_DetermineFreshnessState(
+                    true,
+                    measurementAgeMilliseconds,
+                    GPS_SPEED_FRESH_MS,
+                    speedExpirationThreshold) == GPS_EXPIRED)
+            {
+                Serial.println("Beacon speed has expired; marking it unavailable.");
+                packet.speed = GPS_SPEED_UNAVAILABLE;
+            }
+        }
+
+        if (packet.heading != GPS_HEADING_UNAVAILABLE &&
+            GPS_DetermineFreshnessState(
+                true,
+                measurementAgeMilliseconds,
+                GPS_HEADING_FRESH_MS,
+                GPS_HEADING_EXPIRE_MS) == GPS_EXPIRED)
+        {
+            Serial.println("Beacon heading has expired; marking it unavailable.");
+            packet.heading = GPS_HEADING_UNAVAILABLE;
+        }
+    }
+
     return true;
 }
 

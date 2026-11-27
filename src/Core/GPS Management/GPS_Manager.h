@@ -76,10 +76,9 @@ bool GPS_ValidateSpeed(double &speedMetersPerSecond, bool &wasClamped);
 bool GPS_ValidateHeading(double headingDegrees);
 bool GPS_ValidateFixTimestamp(uint64_t timestampMilliseconds);
 bool GPS_ValidatePosition(double latitude, double longitude);
-uint32_t GPS_CalculatePositionFreshnessThresholdMs(
-    double speedMetersPerSecond);
-uint32_t GPS_CalculatePositionExpirationThresholdMs(
-    double speedMetersPerSecond);
+uint32_t GPS_CalculatePositionFreshnessThresholdMs(double speedMetersPerSecond);
+uint32_t GPS_CalculatePositionExpirationThresholdMs(double speedMetersPerSecond);
+
 GPS_FreshnessState GPS_DetermineFreshnessState(
     bool measurementAvailable,
     uint64_t measurementAgeMilliseconds,

@@ -1,6 +1,8 @@
 #pragma once
 #include "Library_Headers.h"
-#include "Project_Headers.h"
+
+enum class BeaconGPSUpdate : uint8_t;
+
 #include "Config.h"
 
 // Maximum number of neighbours stored simultaneously.
@@ -37,12 +39,21 @@ void initializeNeighbourTable();
 // Find a neighbour using its six-byte Node ID. Returns the table index, or -1 if not found.
 int findNeighbour(const uint8_t nodeID[6]);
 
+// Read sequence and GPS timestamp history without exposing neighbour storage.
+bool getNeighbourValidationHistory(
+    const uint8_t nodeID[6],
+    uint16_t &lastSequence,
+    uint32_t &lastGpsMeasurementTimestamp
+);
+
 // Create or update a neighbour from a decoded beacon.
 // GPS coordinates of the current node are supplied separately.
 // Returns true if the operation succeeds.
 bool addOrUpdateNeighbour(
     const uint8_t nodeID[6],
     uint16_t sequence,
+    uint16_t sequenceDifference,
+    BeaconGPSUpdate gpsUpdate,
     uint32_t timestamp,
     int32_t latitude,
     int32_t longitude,

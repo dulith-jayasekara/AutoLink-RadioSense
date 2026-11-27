@@ -1,4 +1,5 @@
 #include "Neighbour_Table.h"
+#include "beacon.h"
 
 // Private neighbour table.
 static NeighbourEntry neighbourTable[MAX_NEIGHBOURS];
@@ -13,8 +14,7 @@ namespace
 {
     bool HasPosition(int32_t latitude, int32_t longitude)
     {
-        return latitude != GPS_LATITUDE_UNAVAILABLE &&
-               longitude != GPS_LONGITUDE_UNAVAILABLE;
+        return latitude != GPS_LATITUDE_UNAVAILABLE && longitude != GPS_LONGITUDE_UNAVAILABLE;
     }
 
     void InvalidateNeighbourGPS(NeighbourEntry &entry)
@@ -29,6 +29,7 @@ namespace
 
     void UpdateNeighbourGPS(
         NeighbourEntry &entry,
+        BeaconGPSUpdate updateMode,
         uint32_t timestamp,
         int32_t latitude,
         int32_t longitude,
@@ -37,40 +38,24 @@ namespace
         int32_t currentLatitude,
         int32_t currentLongitude)
     {
-        if (timestamp == GPS_TIMESTAMP_UNAVAILABLE || timestamp == 0)
+        switch (updateMode)
         {
+        case BeaconGPSUpdate::Invalidate:
             InvalidateNeighbourGPS(entry);
             return;
-        }
-
-        const bool newerTimestamp =
-            entry.lastGpsMeasurementTimestamp == GPS_TIMESTAMP_UNAVAILABLE ||
-            timestamp > entry.lastGpsMeasurementTimestamp;
-        const bool sameTimestamp =
-            timestamp == entry.lastGpsMeasurementTimestamp;
-
-        if (newerTimestamp)
-        {
+        case BeaconGPSUpdate::Preserve:
+            return;
+        case BeaconGPSUpdate::Replace:
             entry.lastGpsMeasurementTimestamp = timestamp;
             entry.timestamp = timestamp;
-            if (latitude == GPS_LATITUDE_UNAVAILABLE ||
-                longitude == GPS_LONGITUDE_UNAVAILABLE)
-            {
-                entry.latitude = GPS_LATITUDE_UNAVAILABLE;
-                entry.longitude = GPS_LONGITUDE_UNAVAILABLE;
-            }
-            else
-            {
-                entry.latitude = latitude;
-                entry.longitude = longitude;
-            }
+            entry.latitude = latitude;
+            entry.longitude = longitude;
             entry.heading = heading;
             entry.speed = speed;
-        }
-        else if (sameTimestamp)
-        {
-            // Repeated beacons do not refresh a GPS measurement. They may,
-            // however, report that an individual sender field has expired.
+            break;
+        case BeaconGPSUpdate::MergeUnavailable:
+            // Same-timestamp beacons cannot refresh GPS values, but may
+            // report that one or more previously supplied fields expired.
             if (latitude == GPS_LATITUDE_UNAVAILABLE ||
                 longitude == GPS_LONGITUDE_UNAVAILABLE)
             {
@@ -85,9 +70,8 @@ namespace
             {
                 entry.speed = GPS_SPEED_UNAVAILABLE;
             }
-        }
-        else
-        {
+            break;
+        default:
             return;
         }
 
@@ -145,6 +129,26 @@ int findNeighbour(const uint8_t nodeID[6])
     }
 
     return -1;
+}
+
+bool getNeighbourValidationHistory(
+    const uint8_t nodeID[6],
+    uint16_t &lastSequence,
+    uint32_t &lastGpsMeasurementTimestamp)
+{
+    lastSequence = 0;
+    lastGpsMeasurementTimestamp = GPS_TIMESTAMP_UNAVAILABLE;
+
+    const int index = findNeighbour(nodeID);
+    if (index < 0)
+    {
+        return false;
+    }
+
+    const NeighbourEntry &entry = neighbourTable[index];
+    lastSequence = entry.lastSequence;
+    lastGpsMeasurementTimestamp = entry.lastGpsMeasurementTimestamp;
+    return true;
 }
 
 // --------------------------------------------------
@@ -211,6 +215,8 @@ float calculateDisplacement(
 bool addOrUpdateNeighbour(
     const uint8_t nodeID[6],
     uint16_t sequence,
+    uint16_t sequenceDifference,
+    BeaconGPSUpdate gpsUpdate,
     uint32_t timestamp,
     int32_t latitude,
     int32_t longitude,
@@ -222,13 +228,6 @@ bool addOrUpdateNeighbour(
     int32_t currentLongitude)
 {
     if (nodeID == nullptr)
-        return false;
-
-    // Do not add this device as its own neighbour.
-    uint8_t ownID[6];
-    WiFi.macAddress(ownID);
-
-    if (memcmp(nodeID, ownID, 6) == 0)
         return false;
 
     int index = findNeighbour(nodeID);
@@ -272,21 +271,11 @@ bool addOrUpdateNeighbour(
     else
     {
         NeighbourEntry &entry = neighbourTable[index];
-
-        // Sequence-number difference uses 16-bit modular arithmetic.
-        uint16_t difference =
-            static_cast<uint16_t>(sequence - entry.lastSequence);
-
-        // Only accept forward progression within half the sequence space.
-        // Duplicate or older packets do not change sequence statistics.
-        if (difference == 0 || difference >= 32768)
-            return false;
-
         entry.packetsReceived++;
 
-        if (difference > 1)
+        if (sequenceDifference > 1)
         {
-            entry.packetsLost += difference - 1;
+            entry.packetsLost += sequenceDifference - 1;
         }
 
         entry.lastSequence = sequence;
@@ -315,6 +304,7 @@ bool addOrUpdateNeighbour(
 
     UpdateNeighbourGPS(
         entry,
+        gpsUpdate,
         timestamp,
         latitude,
         longitude,

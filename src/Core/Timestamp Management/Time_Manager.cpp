@@ -18,16 +18,19 @@ namespace
     // This flag is deliberately reset on every boot, even if the hardware
     // happens to retain some old system-clock value.
     bool clockSynchronized = false;
+    // Store time as whole seconds plus a millisecond remainder. The latter
+    // preserves sub-second precision between calls to the timestamp getters.
     uint64_t currentTimestampSeconds = 0;
     uint16_t remainingTimestampMilliseconds = 0;
+    // millis() value from the last synchronization or accumulator update.
     uint32_t lastTimestampUpdateMillis = 0;
 }
 
 // Parse an unsigned decimal timestamp without signs, whitespace, or overflow.
-bool Time_ParsePhoneTimestamp(
-    const String &text,
-    uint64_t &timestampMilliseconds)
+bool Time_ParsePhoneTimestamp(const String &text, uint64_t &timestampMilliseconds)
 {
+    // Parse digit by digit instead of using a permissive conversion routine:
+    // signs, spaces, and trailing characters are not valid Unix timestamps.
     if (text.length() == 0)
     {
         return false;
@@ -45,6 +48,7 @@ bool Time_ParsePhoneTimestamp(
         }
 
         const uint64_t digit = static_cast<uint64_t>(character - '0');
+        // Check before multiplying so an unusually long input cannot wrap.
         if (parsedValue > (maximumValue - digit) / 10ULL)
         {
             return false;
@@ -68,12 +72,14 @@ void Time_Initialization()
 
 bool Time_IsTimestampReasonable(uint64_t timestampMilliseconds)
 {
-    return timestampMilliseconds >= MIN_PHONE_TIMESTAMP_MS &&
-           timestampMilliseconds <= MAX_PHONE_TIMESTAMP_MS;
+    // Reject values outside the project's supported Unix-date window.
+    return timestampMilliseconds >= MIN_PHONE_TIMESTAMP_MS && timestampMilliseconds <= MAX_PHONE_TIMESTAMP_MS;
 }
 
 bool Time_Synchronization(uint64_t timestampMilliseconds)
 {
+    // Validate here as well as at the HTTP request boundary so every caller
+    // must satisfy the same supported-date rule before changing the clock.
     if (!Time_IsTimestampReasonable(timestampMilliseconds))
     {
         Serial.println("Rejected phone timestamp outside the supported range.");
@@ -89,6 +95,8 @@ bool Time_Synchronization(uint64_t timestampMilliseconds)
     newTime.tv_sec = static_cast<time_t>(seconds);
     newTime.tv_usec = static_cast<suseconds_t>(remainingMilliseconds * 1000ULL);
 
+    // Update the ESP32 system clock. Do not mark the clock synchronized if
+    // the operating-system clock update fails.
     if (settimeofday(&newTime, nullptr) != 0)
     {
         Serial.println("Failed to set the ESP32 system clock.");
@@ -108,6 +116,7 @@ bool Time_Synchronization(uint64_t timestampMilliseconds)
 
 uint32_t Time_GetCurrentTimestamp()
 {
+    // Zero indicates that time is unavailable or has not been synchronized.
     if (!clockSynchronized)
     {
         return 0;
@@ -116,15 +125,14 @@ uint32_t Time_GetCurrentTimestamp()
     const uint32_t nowMillis = millis();
     // Unsigned subtraction remains correct when millis() wraps around.
     const uint32_t elapsedMilliseconds = nowMillis - lastTimestampUpdateMillis;
-    const uint64_t accumulatedMilliseconds =
-        static_cast<uint64_t>(remainingTimestampMilliseconds) + elapsedMilliseconds;
+    // Carry fractional seconds forward so repeated reads do not discard the
+    // sub-second portion of elapsed time.
+    const uint64_t accumulatedMilliseconds = static_cast<uint64_t>(remainingTimestampMilliseconds) + elapsedMilliseconds;
     currentTimestampSeconds += accumulatedMilliseconds / 1000ULL;
-    remainingTimestampMilliseconds =
-        static_cast<uint16_t>(accumulatedMilliseconds % 1000ULL);
+    remainingTimestampMilliseconds = static_cast<uint16_t>(accumulatedMilliseconds % 1000ULL);
     lastTimestampUpdateMillis = nowMillis;
 
-    if (currentTimestampSeconds < MIN_UNIX_TIMESTAMP_SECONDS ||
-        currentTimestampSeconds > UINT32_MAX)
+    if (currentTimestampSeconds < MIN_UNIX_TIMESTAMP_SECONDS || currentTimestampSeconds > UINT32_MAX)
     {
         return 0;
     }
@@ -134,6 +142,8 @@ uint32_t Time_GetCurrentTimestamp()
 
 bool Time_GetCurrentTimestampMilliseconds(uint64_t &timestampMilliseconds)
 {
+    // GPS fixes are compared in milliseconds, so this accessor has a bool
+    // result to distinguish unavailable time from a valid timestamp value.
     if (!clockSynchronized)
     {
         return false;
@@ -142,29 +152,25 @@ bool Time_GetCurrentTimestampMilliseconds(uint64_t &timestampMilliseconds)
     // Use the phone-synchronized accumulator rather than gettimeofday() so
     // GPS age checks and beacon timestamps share the same monotonic time base.
     const uint32_t nowMillis = millis();
-    const uint32_t elapsedMilliseconds =
-        nowMillis - lastTimestampUpdateMillis;
-    const uint64_t accumulatedMilliseconds =
-        static_cast<uint64_t>(remainingTimestampMilliseconds) +
-        elapsedMilliseconds;
+    const uint32_t elapsedMilliseconds = nowMillis - lastTimestampUpdateMillis;
+    const uint64_t accumulatedMilliseconds = static_cast<uint64_t>(remainingTimestampMilliseconds) + elapsedMilliseconds;
+    
     currentTimestampSeconds += accumulatedMilliseconds / 1000ULL;
-    remainingTimestampMilliseconds =
-        static_cast<uint16_t>(accumulatedMilliseconds % 1000ULL);
+    remainingTimestampMilliseconds = static_cast<uint16_t>(accumulatedMilliseconds % 1000ULL);
     lastTimestampUpdateMillis = nowMillis;
 
-    if (currentTimestampSeconds < MIN_UNIX_TIMESTAMP_SECONDS ||
-        currentTimestampSeconds > UINT32_MAX)
+    if (currentTimestampSeconds < MIN_UNIX_TIMESTAMP_SECONDS || currentTimestampSeconds > UINT32_MAX)
     {
         return false;
     }
 
-    timestampMilliseconds =
-        currentTimestampSeconds * 1000ULL +
-        remainingTimestampMilliseconds;
+    timestampMilliseconds = currentTimestampSeconds * 1000ULL + remainingTimestampMilliseconds;
     return true;
 }
 
 bool Time_IsSynchronized()
 {
+    // This state is reset at startup and becomes true only after a successful
+    // phone-time synchronization.
     return clockSynchronized;
 }

@@ -3,7 +3,16 @@
 #define BEACON_H
 
 #include "Library_Headers.h"
-#include "Project_Headers.h"
+
+// Beacon validation's GPS decision, passed to Neighbour_Table for storage.
+enum class BeaconGPSUpdate : uint8_t
+{
+    Replace,
+    MergeUnavailable,
+    Preserve,
+    Invalidate
+};
+
 #include "Config.h"
 
 // ---------------------------------------------------------
@@ -40,14 +49,14 @@ constexpr float BEACON_STATIONARY_SPEED_KMPH = 1.8f;
 // ---------------------------------------------------------
 
 struct BeaconPacket {
-    uint8_t packetType;
-    uint8_t nodeID[6];
-    uint16_t sequenceNumber;
-    int32_t latitude;
-    int32_t longitude;
-    uint16_t speed;       // Centimetres per second
-    uint16_t heading;     // Degrees (0-359), or GPS_HEADING_UNAVAILABLE
-    uint32_t timestamp;   // Unix time in seconds
+    uint8_t packetType;       // 1 byte  - Beacon packet identifier (0x01)
+    uint8_t nodeID[6];        // 6 bytes - Unique node ID (Wi-Fi MAC address)
+    uint16_t sequenceNumber; // 2 bytes - Beacon sequence number (0-65535)
+    int32_t latitude;        // 4 bytes - Latitude in degrees multiplied by 10^7
+    int32_t longitude;       // 4 bytes - Longitude in degrees multiplied by 10^7
+    uint16_t speed;          // 2 bytes - Speed in centimetres per second
+    uint16_t heading;        // 2 bytes - Degrees (0-359), or GPS_HEADING_UNAVAILABLE
+    uint32_t timestamp;      // 4 bytes - Unix timestamp in seconds
 };
 
 
@@ -71,6 +80,14 @@ bool transmitBeacon(BeaconPacket &packet);
 bool receiveBeacon(
     BeaconPacket &packet,
     BeaconReceptionInfo &receptionInfo
+);
+
+// Validate a decoded beacon before neighbour state is modified. The GPS
+// update mode tells Neighbour_Table how to apply the already-validated fields.
+bool validateReceivedBeacon(
+    BeaconPacket &packet,
+    uint16_t &sequenceDifference,
+    BeaconGPSUpdate &gpsUpdate
 );
 
 void extractBeaconInformation(const BeaconPacket &packet);
