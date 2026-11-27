@@ -66,6 +66,19 @@ struct BeaconReceptionInfo {
     float snr;
 };
 
+// Receiver-side GPS validation results; these fields are never serialized.
+// GPS_UNAVAILABLE can mean either a missing/invalid field or an unverified
+// freshness state; measurementAgeAvailable distinguishes those cases.
+struct BeaconGPSFreshnessInfo
+{
+    // Numeric GPS_FreshnessState values, kept byte-sized to avoid a Core
+    // header cycle. Beacon calculates them using the Core enum.
+    uint8_t positionState;
+    uint8_t speedState;
+    uint8_t headingState;
+    bool measurementAgeAvailable;
+};
+
 
 // ---------------------------------------------------------
 // FUNCTION DECLARATIONS
@@ -87,7 +100,8 @@ bool receiveBeacon(
 bool validateReceivedBeacon(
     BeaconPacket &packet,
     uint16_t &sequenceDifference,
-    BeaconGPSUpdate &gpsUpdate
+    BeaconGPSUpdate &gpsUpdate,
+    BeaconGPSFreshnessInfo &freshnessInfo
 );
 
 void extractBeaconInformation(const BeaconPacket &packet);

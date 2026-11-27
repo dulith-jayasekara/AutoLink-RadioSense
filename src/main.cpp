@@ -97,10 +97,16 @@ void loop() {
     {
         uint16_t sequenceDifference = 0;
         BeaconGPSUpdate gpsUpdate = BeaconGPSUpdate::Invalidate;
+        BeaconGPSFreshnessInfo freshnessInfo = {
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            false};
         if (validateReceivedBeacon(
                 incomingBeacon,
                 sequenceDifference,
-                gpsUpdate))
+                gpsUpdate,
+                freshnessInfo))
         {
             extractBeaconInformation(incomingBeacon);
 
@@ -121,6 +127,7 @@ void loop() {
                     incomingBeacon.sequenceNumber,
                     sequenceDifference,
                     gpsUpdate,
+                    freshnessInfo,
                     incomingBeacon.timestamp,
                     incomingBeacon.latitude,
                     incomingBeacon.longitude,

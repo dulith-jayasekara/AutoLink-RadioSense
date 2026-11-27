@@ -1,8 +1,10 @@
 #include "Neighbour_Table.h"
 #include "beacon.h"
+#include "../Core/GPS Management/GPS_Manager.h"
 
 // Private neighbour table.
 static NeighbourEntry neighbourTable[MAX_NEIGHBOURS];
+static BeaconGPSFreshnessInfo neighbourGPSFreshness[MAX_NEIGHBOURS];
 
 // Number of active entries.
 static uint8_t neighbourCount = 0;
@@ -29,7 +31,9 @@ namespace
 
     void UpdateNeighbourGPS(
         NeighbourEntry &entry,
+        BeaconGPSFreshnessInfo &storedFreshness,
         BeaconGPSUpdate updateMode,
+        const BeaconGPSFreshnessInfo &freshnessInfo,
         uint32_t timestamp,
         int32_t latitude,
         int32_t longitude,
@@ -42,6 +46,7 @@ namespace
         {
         case BeaconGPSUpdate::Invalidate:
             InvalidateNeighbourGPS(entry);
+            storedFreshness = freshnessInfo;
             return;
         case BeaconGPSUpdate::Preserve:
             return;
@@ -52,6 +57,7 @@ namespace
             entry.longitude = longitude;
             entry.heading = heading;
             entry.speed = speed;
+            storedFreshness = freshnessInfo;
             break;
         case BeaconGPSUpdate::MergeUnavailable:
             // Same-timestamp beacons cannot refresh GPS values, but may
@@ -70,6 +76,35 @@ namespace
             {
                 entry.speed = GPS_SPEED_UNAVAILABLE;
             }
+
+            // Same-timestamp data may become stale or expired, but an
+            // unavailable stored field must never regain a fresh/stale state.
+            if (HasPosition(entry.latitude, entry.longitude) ||
+                freshnessInfo.positionState ==
+                    static_cast<uint8_t>(GPS_EXPIRED) ||
+                freshnessInfo.positionState ==
+                    static_cast<uint8_t>(GPS_UNAVAILABLE))
+            {
+                storedFreshness.positionState = freshnessInfo.positionState;
+            }
+            if (entry.speed != GPS_SPEED_UNAVAILABLE ||
+                freshnessInfo.speedState ==
+                    static_cast<uint8_t>(GPS_EXPIRED) ||
+                freshnessInfo.speedState ==
+                    static_cast<uint8_t>(GPS_UNAVAILABLE))
+            {
+                storedFreshness.speedState = freshnessInfo.speedState;
+            }
+            if (entry.heading != GPS_HEADING_UNAVAILABLE ||
+                freshnessInfo.headingState ==
+                    static_cast<uint8_t>(GPS_EXPIRED) ||
+                freshnessInfo.headingState ==
+                    static_cast<uint8_t>(GPS_UNAVAILABLE))
+            {
+                storedFreshness.headingState = freshnessInfo.headingState;
+            }
+            storedFreshness.measurementAgeAvailable =
+                freshnessInfo.measurementAgeAvailable;
             break;
         default:
             return;
@@ -107,6 +142,15 @@ void initializeNeighbourTable()
 {
     memset(neighbourTable, 0, sizeof(neighbourTable));
     memset(occupied, 0, sizeof(occupied));
+
+    for (uint8_t i = 0; i < MAX_NEIGHBOURS; ++i)
+    {
+        neighbourGPSFreshness[i] = {
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            false};
+    }
 
     neighbourCount = 0;
 }
@@ -148,6 +192,26 @@ bool getNeighbourValidationHistory(
     const NeighbourEntry &entry = neighbourTable[index];
     lastSequence = entry.lastSequence;
     lastGpsMeasurementTimestamp = entry.lastGpsMeasurementTimestamp;
+    return true;
+}
+
+bool getNeighbourGPSFreshnessInfo(
+    const uint8_t nodeID[6],
+    BeaconGPSFreshnessInfo &freshnessInfo)
+{
+    freshnessInfo = {
+        static_cast<uint8_t>(GPS_UNAVAILABLE),
+        static_cast<uint8_t>(GPS_UNAVAILABLE),
+        static_cast<uint8_t>(GPS_UNAVAILABLE),
+        false};
+
+    const int index = findNeighbour(nodeID);
+    if (index < 0)
+    {
+        return false;
+    }
+
+    freshnessInfo = neighbourGPSFreshness[index];
     return true;
 }
 
@@ -217,6 +281,7 @@ bool addOrUpdateNeighbour(
     uint16_t sequence,
     uint16_t sequenceDifference,
     BeaconGPSUpdate gpsUpdate,
+    const BeaconGPSFreshnessInfo &freshnessInfo,
     uint32_t timestamp,
     int32_t latitude,
     int32_t longitude,
@@ -255,6 +320,11 @@ bool addOrUpdateNeighbour(
         NeighbourEntry &entry = neighbourTable[index];
 
         memset(&entry, 0, sizeof(entry));
+        neighbourGPSFreshness[index] = {
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            static_cast<uint8_t>(GPS_UNAVAILABLE),
+            false};
         memcpy(entry.nodeID, nodeID, 6);
         InvalidateNeighbourGPS(entry);
         entry.lastGpsMeasurementTimestamp = GPS_TIMESTAMP_UNAVAILABLE;
@@ -304,7 +374,9 @@ bool addOrUpdateNeighbour(
 
     UpdateNeighbourGPS(
         entry,
+        neighbourGPSFreshness[index],
         gpsUpdate,
+        freshnessInfo,
         timestamp,
         latitude,
         longitude,
@@ -366,6 +438,11 @@ void removeExpiredNeighbours()
             occupied[i] = false;
             memset(&neighbourTable[i], 0,
                    sizeof(NeighbourEntry));
+            neighbourGPSFreshness[i] = {
+                static_cast<uint8_t>(GPS_UNAVAILABLE),
+                static_cast<uint8_t>(GPS_UNAVAILABLE),
+                static_cast<uint8_t>(GPS_UNAVAILABLE),
+                false};
 
             if (neighbourCount > 0)
                 neighbourCount--;

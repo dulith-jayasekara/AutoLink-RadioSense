@@ -2,6 +2,7 @@
 #include "Library_Headers.h"
 
 enum class BeaconGPSUpdate : uint8_t;
+struct BeaconGPSFreshnessInfo;
 
 #include "Config.h"
 
@@ -46,6 +47,12 @@ bool getNeighbourValidationHistory(
     uint32_t &lastGpsMeasurementTimestamp
 );
 
+// Retrieve the most recently applied receiver-side GPS freshness results.
+bool getNeighbourGPSFreshnessInfo(
+    const uint8_t nodeID[6],
+    BeaconGPSFreshnessInfo &freshnessInfo
+);
+
 // Create or update a neighbour from a decoded beacon.
 // GPS coordinates of the current node are supplied separately.
 // Returns true if the operation succeeds.
@@ -54,6 +61,7 @@ bool addOrUpdateNeighbour(
     uint16_t sequence,
     uint16_t sequenceDifference,
     BeaconGPSUpdate gpsUpdate,
+    const BeaconGPSFreshnessInfo &freshnessInfo,
     uint32_t timestamp,
     int32_t latitude,
     int32_t longitude,

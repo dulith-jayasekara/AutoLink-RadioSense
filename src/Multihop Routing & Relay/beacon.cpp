@@ -269,6 +269,63 @@ namespace
         packet.heading = GPS_HEADING_UNAVAILABLE;
         packet.timestamp = GPS_TIMESTAMP_UNAVAILABLE;
     }
+
+    void SetFreshnessUnavailable(BeaconGPSFreshnessInfo &freshnessInfo)
+    {
+        freshnessInfo.positionState =
+            static_cast<uint8_t>(GPS_UNAVAILABLE);
+        freshnessInfo.speedState =
+            static_cast<uint8_t>(GPS_UNAVAILABLE);
+        freshnessInfo.headingState =
+            static_cast<uint8_t>(GPS_UNAVAILABLE);
+        freshnessInfo.measurementAgeAvailable = false;
+    }
+
+    bool validateBeaconNodeID(const uint8_t *nodeID)
+    {
+        if (nodeID == nullptr)
+        {
+            Serial.println("Ignored beacon with a missing Node ID.");
+            return false;
+        }
+
+        uint8_t ownNodeID[BEACON_MAC_SIZE] = {};
+        WiFi.macAddress(ownNodeID);
+        if (memcmp(nodeID, ownNodeID, sizeof(ownNodeID)) == 0)
+        {
+            Serial.println("Ignored beacon from this node.");
+            return false;
+        }
+
+        // All-zero and broadcast addresses are not individual node IDs.
+        bool allZero = true;
+        bool allBroadcast = true;
+        for (uint8_t index = 0; index < BEACON_MAC_SIZE; ++index)
+        {
+            allZero = allZero && nodeID[index] == 0x00;
+            allBroadcast = allBroadcast && nodeID[index] == 0xFF;
+        }
+        if (allZero)
+        {
+            Serial.println("Ignored beacon with an all-zero Node ID.");
+            return false;
+        }
+        if (allBroadcast)
+        {
+            Serial.println("Ignored beacon with a broadcast Node ID.");
+            return false;
+        }
+
+        // The least-significant bit of the first octet is the Individual/
+        // Group bit; locally administered unicast addresses remain valid.
+        if ((nodeID[0] & 0x01) != 0)
+        {
+            Serial.println("Ignored beacon with a multicast Node ID.");
+            return false;
+        }
+
+        return true;
+    }
 }
 
 
@@ -491,17 +548,16 @@ bool receiveBeacon(BeaconPacket &packet, BeaconReceptionInfo &receptionInfo)
 bool validateReceivedBeacon(
     BeaconPacket &packet,
     uint16_t &sequenceDifference,
-    BeaconGPSUpdate &gpsUpdate)
+    BeaconGPSUpdate &gpsUpdate,
+    BeaconGPSFreshnessInfo &freshnessInfo)
 {
     sequenceDifference = 0;
     gpsUpdate = BeaconGPSUpdate::Invalidate;
+    SetFreshnessUnavailable(freshnessInfo);
 
-    // A node must not add its own radio loopback as a neighbour.
-    uint8_t ownNodeID[BEACON_MAC_SIZE] = {};
-    WiFi.macAddress(ownNodeID);
-    if (memcmp(packet.nodeID, ownNodeID, sizeof(ownNodeID)) == 0)
+    // Reject invalid node identities before reading or updating neighbour state.
+    if (!validateBeaconNodeID(packet.nodeID))
     {
-        Serial.println("Ignored beacon from this node.");
         return false;
     }
 
@@ -556,6 +612,7 @@ bool validateReceivedBeacon(
     {
         // The link packet is still useful, but older GPS measurements must
         // not replace the neighbour's newer location or motion values.
+        getNeighbourGPSFreshnessInfo(packet.nodeID, freshnessInfo);
         gpsUpdate = BeaconGPSUpdate::Preserve;
         Serial.println("Beacon GPS timestamp is older than the stored measurement; preserving neighbour GPS data.");
         return true;
@@ -628,6 +685,7 @@ bool validateReceivedBeacon(
                 currentTimestampMilliseconds))
         {
             measurementAgeAvailable = true;
+            freshnessInfo.measurementAgeAvailable = true;
             if (fixTimestampMilliseconds > currentTimestampMilliseconds)
             {
                 const uint64_t futureOffsetMilliseconds =
@@ -673,45 +731,58 @@ bool validateReceivedBeacon(
             GPS_CalculatePositionExpirationThresholdMs(
                 positionSpeedMetersPerSecond);
 
-        if (packet.latitude != GPS_LATITUDE_UNAVAILABLE &&
+        const GPS_FreshnessState positionState =
             GPS_DetermineFreshnessState(
-                true,
-                measurementAgeMilliseconds,
-                positionFreshnessThreshold,
-                positionExpirationThreshold) == GPS_EXPIRED)
+            packet.latitude != GPS_LATITUDE_UNAVAILABLE &&
+                packet.longitude != GPS_LONGITUDE_UNAVAILABLE,
+            measurementAgeMilliseconds,
+            positionFreshnessThreshold,
+            positionExpirationThreshold);
+        freshnessInfo.positionState =
+            static_cast<uint8_t>(positionState);
+        if (positionState == GPS_EXPIRED)
         {
             Serial.println("Beacon position has expired; marking coordinates unavailable.");
             packet.latitude = GPS_LATITUDE_UNAVAILABLE;
             packet.longitude = GPS_LONGITUDE_UNAVAILABLE;
         }
 
-        if (speedAvailable)
+        const uint32_t speedExpirationThreshold =
+            speedMetersPerSecond == GPS_MIN_SPEED_MPS
+            ? GPS_ZERO_SPEED_EXPIRE_MS
+            : GPS_SPEED_EXPIRE_MS;
+        const GPS_FreshnessState speedState =
+            GPS_DetermineFreshnessState(
+            speedAvailable,
+            measurementAgeMilliseconds,
+            GPS_SPEED_FRESH_MS,
+            speedExpirationThreshold);
+        freshnessInfo.speedState = static_cast<uint8_t>(speedState);
+        if (speedState == GPS_EXPIRED)
         {
-            const uint32_t speedExpirationThreshold =
-                speedMetersPerSecond == GPS_MIN_SPEED_MPS
-                ? GPS_ZERO_SPEED_EXPIRE_MS
-                : GPS_SPEED_EXPIRE_MS;
-            if (GPS_DetermineFreshnessState(
-                    true,
-                    measurementAgeMilliseconds,
-                    GPS_SPEED_FRESH_MS,
-                    speedExpirationThreshold) == GPS_EXPIRED)
-            {
-                Serial.println("Beacon speed has expired; marking it unavailable.");
-                packet.speed = GPS_SPEED_UNAVAILABLE;
-            }
+            Serial.println("Beacon speed has expired; marking it unavailable.");
+            packet.speed = GPS_SPEED_UNAVAILABLE;
         }
 
-        if (packet.heading != GPS_HEADING_UNAVAILABLE &&
+        const GPS_FreshnessState headingState =
             GPS_DetermineFreshnessState(
-                true,
-                measurementAgeMilliseconds,
-                GPS_HEADING_FRESH_MS,
-                GPS_HEADING_EXPIRE_MS) == GPS_EXPIRED)
+            packet.heading != GPS_HEADING_UNAVAILABLE,
+            measurementAgeMilliseconds,
+            GPS_HEADING_FRESH_MS,
+            GPS_HEADING_EXPIRE_MS);
+        freshnessInfo.headingState =
+            static_cast<uint8_t>(headingState);
+        if (headingState == GPS_EXPIRED)
         {
             Serial.println("Beacon heading has expired; marking it unavailable.");
             packet.heading = GPS_HEADING_UNAVAILABLE;
         }
+    }
+    else
+    {
+        // Without a verifiable age, GPS_UNAVAILABLE means "freshness unknown"
+        // here; the valid packet fields are retained and are not called fresh.
+        Serial.println("Beacon GPS freshness is unverified; retaining valid fields.");
     }
 
     return true;
