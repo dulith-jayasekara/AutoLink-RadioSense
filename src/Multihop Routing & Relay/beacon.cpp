@@ -221,27 +221,29 @@ namespace
         Serial.print("  Sequence: ");
         Serial.println(packet.sequenceNumber);
 
-        // Convert the stored latitude back to decimal degrees.
         Serial.print("  Latitude: ");
-        Serial.println(
-            static_cast<double>(packet.latitude) / 10000000.0,
-            7
-        );
+        if (packet.latitude == GPS_LATITUDE_UNAVAILABLE)
+            Serial.println("unavailable");
+        else
+            Serial.println(static_cast<double>(packet.latitude) / 10000000.0, 7);
 
-        // Convert the stored longitude back to decimal degrees.
         Serial.print("  Longitude: ");
-        Serial.println(
-            static_cast<double>(packet.longitude) / 10000000.0,
-            7
-        );
+        if (packet.longitude == GPS_LONGITUDE_UNAVAILABLE)
+            Serial.println("unavailable");
+        else
+            Serial.println(static_cast<double>(packet.longitude) / 10000000.0, 7);
 
-        // Speed is already stored in centimetres per second.
         Serial.print("  Speed: ");
-        Serial.print(packet.speed);
-        Serial.println(" cm/s");
+        if (packet.speed == GPS_SPEED_UNAVAILABLE)
+            Serial.println("unavailable");
+        else
+        {
+            Serial.print(packet.speed);
+            Serial.println(" cm/s");
+        }
 
         Serial.print("  Heading: ");
-        if (packet.heading == BEACON_HEADING_UNAVAILABLE)
+        if (packet.heading == GPS_HEADING_UNAVAILABLE)
         {
             Serial.println("unavailable");
         }
@@ -251,17 +253,11 @@ namespace
             Serial.println(" degrees");
         }
 
-        // The packet stores Unix time in seconds; zero means the sender's
-        // clock had not been synchronized when this beacon was created.
         Serial.print("  Timestamp (Unix seconds): ");
-        if (packet.timestamp == 0)
-        {
-            Serial.println("not synchronized (0)");
-        }
+        if (packet.timestamp == GPS_TIMESTAMP_UNAVAILABLE)
+            Serial.println("unavailable");
         else
-        {
             Serial.println(packet.timestamp);
-        }
     }
 }
 
@@ -276,37 +272,57 @@ uint16_t generateSequenceNumber()
     return sequenceNumber;
 }
 
-// Populate the beacon from the latest phone fix. Adaptive transmission
-// supplies the selected speed after this function returns.
+// Populate every GPS field from one coherently evaluated phone snapshot.
 void generateBeacon(BeaconPacket &packet)
 {
     packet.packetType = BEACON_PACKET_TYPE;
     WiFi.macAddress(packet.nodeID);
-    double latitude = 0.0;
-    double longitude = 0.0;
-    if (GPS_GetLocation(latitude, longitude))
+
+    packet.latitude = GPS_LATITUDE_UNAVAILABLE;
+    packet.longitude = GPS_LONGITUDE_UNAVAILABLE;
+    packet.speed = GPS_SPEED_UNAVAILABLE;
+    packet.heading = GPS_HEADING_UNAVAILABLE;
+    packet.timestamp = GPS_TIMESTAMP_UNAVAILABLE;
+
+    GPSMeasurementSnapshot snapshot = {};
+    if (GPS_GetSnapshot(snapshot))
     {
-        packet.latitude = static_cast<int32_t>(latitude * 10000000.0);
-        packet.longitude = static_cast<int32_t>(longitude * 10000000.0);
+        if (snapshot.positionAvailable)
+        {
+            packet.latitude =
+                static_cast<int32_t>(snapshot.latitude * 10000000.0);
+            packet.longitude =
+                static_cast<int32_t>(snapshot.longitude * 10000000.0);
+        }
+        if (snapshot.speedAvailable)
+        {
+            const double encodedSpeed =
+                snapshot.speedMetersPerSecond * 100.0;
+            if (isfinite(encodedSpeed) &&
+                encodedSpeed >= 0.0 &&
+                encodedSpeed < static_cast<double>(GPS_SPEED_UNAVAILABLE))
+            {
+                packet.speed =
+                    static_cast<uint16_t>(encodedSpeed + 0.5);
+            }
+        }
+        if (snapshot.headingAvailable)
+        {
+            const uint16_t roundedHeading =
+                static_cast<uint16_t>(snapshot.headingDegrees + 0.5);
+            packet.heading = roundedHeading == 360 ? 0 : roundedHeading;
+        }
+        if (snapshot.timestampAvailable)
+        {
+            const uint64_t timestampSeconds =
+                snapshot.fixTimestampMilliseconds / 1000ULL;
+            if (timestampSeconds < GPS_TIMESTAMP_UNAVAILABLE)
+            {
+                packet.timestamp =
+                    static_cast<uint32_t>(timestampSeconds);
+            }
+        }
     }
-    else
-    {
-        packet.latitude = 0;
-        packet.longitude = 0;
-        Serial.println("No phone location available; beacon coordinates are zero.");
-    }
-    packet.speed = 0;
-    packet.heading = BEACON_HEADING_UNAVAILABLE;
-    GPSMotion phoneMotion = {};
-    if (GPS_GetVehicleMotion(phoneMotion) &&
-        phoneMotion.headingAvailable)
-    {
-        packet.heading = static_cast<uint16_t>(
-            phoneMotion.headingDegrees + 0.5) % 360;
-    }
-    // Keep using the packet's existing four-byte seconds field. Zero is the
-    // established invalid marker while this node waits for phone time.
-    packet.timestamp = Time_GetCurrentTimestamp();
 }
 
 
@@ -472,7 +488,7 @@ void extractBeaconInformation(const BeaconPacket &packet)
 
 uint32_t calculateBeaconInterval(uint16_t speed,bool speedAvailable){
     // Use the default interval if vehicle speed is unavailable.
-    if (!speedAvailable)
+    if (!speedAvailable || speed == GPS_SPEED_UNAVAILABLE)
     {
         return BEACON_DEFAULT_INTERVAL_MS;
     }
@@ -507,8 +523,7 @@ uint32_t calculateBeaconInterval(uint16_t speed,bool speedAvailable){
 
 void handleBeaconTransmission(
     uint16_t speed,
-    bool speedAvailable,
-    bool usingTemporarySpeed)
+    bool speedAvailable)
 {
     static BeaconPacket outgoingBeacon = {};
     static uint32_t lastBeaconTransmit = 0;
@@ -520,19 +535,18 @@ void handleBeaconTransmission(
     {
         generateBeacon(outgoingBeacon);
 
-        outgoingBeacon.speed = speedAvailable ? speed : 0;
+        outgoingBeacon.speed =
+            speedAvailable && speed != GPS_SPEED_UNAVAILABLE
+            ? speed
+            : GPS_SPEED_UNAVAILABLE;
 
         Serial.println("Adaptive Beacon Transmission");
-        if (speedAvailable)
+        if (speedAvailable && speed != GPS_SPEED_UNAVAILABLE)
         {
             const float speedKmph = speed * 0.036f;
             Serial.print("Vehicle speed: ");
             Serial.print(speedKmph, 2);
             Serial.println(" km/h");
-            if (usingTemporarySpeed)
-            {
-                Serial.println("Using temporary test speed; phone GPS speed unavailable.");
-            }
         }
         else
         {

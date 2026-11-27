@@ -36,6 +36,10 @@ static const char LOCATION_PAGE[] PROGMEM = R"rawliteral(
 
   <script>
     let locationWatchId = null;
+    let locationSharingActive = false;
+    let locationRequestInFlight = false;
+    let pendingLocationPosition = null;
+    let lastQueuedFixTimestamp = 0;
 
     async function synchronizePhoneTime() {
       const timeStatus = document.getElementById("timeStatus");
@@ -78,6 +82,8 @@ static const char LOCATION_PAGE[] PROGMEM = R"rawliteral(
       const locationButton = document.getElementById("locationButton");
 
       if (locationWatchId !== null) {
+        locationSharingActive = false;
+        pendingLocationPosition = null;
         navigator.geolocation.clearWatch(locationWatchId);
         locationWatchId = null;
         locationButton.textContent = "Start location updates";
@@ -93,62 +99,16 @@ static const char LOCATION_PAGE[] PROGMEM = R"rawliteral(
 
       locationStatus.textContent = "Requesting location permission...";
       locationButton.textContent = "Stop location updates";
+      locationSharingActive = true;
 
       locationWatchId = navigator.geolocation.watchPosition(
-        async function(position) {
-          const latitude = position.coords.latitude;
-          const longitude = position.coords.longitude;
-          const accuracy = position.coords.accuracy;
-          const speed = position.coords.speed;
-          const heading = position.coords.heading;
-
-          locationStatus.textContent = "Sending location to vehicle node...";
-
-          const body = new URLSearchParams({
-            latitude: latitude,
-            longitude: longitude,
-            accuracy: accuracy,
-            speed: Number.isFinite(speed) ? speed : "null",
-            heading: Number.isFinite(heading) ? heading : "null",
-            fixTimestamp: String(Math.floor(position.timestamp))
-          });
-
-          try {
-            const response = await fetch("/location", {
-              method: "POST",
-              headers: {
-                "Content-Type":
-                  "application/x-www-form-urlencoded"
-              },
-              body: body
-            });
-
-            if (response.ok) {
-              const motionMessage =
-                "Speed: " + (Number.isFinite(speed)
-                  ? (speed * 3.6).toFixed(2) + " km/h"
-                  : "unavailable") +
-                "; heading: " + (Number.isFinite(heading)
-                  ? heading.toFixed(1) + " degrees"
-                  : "unavailable") + ".";
-              const accuracyMessage =
-                "Reported accuracy: " + accuracy.toFixed(1) + " m.";
-              locationStatus.textContent = accuracy <= 1
-                ? "Location update received. " + motionMessage + " " +
-                  accuracyMessage + " Reported estimate is within the 1 m target."
-                : "Location update received. " + motionMessage + " " +
-                  accuracyMessage +
-                  " Best available fix; above the 1 m target.";
-            } else {
-              locationStatus.textContent =
-                "The vehicle node could not receive the location.";
-            }
-          } catch (error) {
-            locationStatus.textContent =
-              "Could not communicate with the vehicle node.";
-          }
+        function(position) {
+          queueLocationUpdate(position);
         },
         function(error) {
+          if (!locationSharingActive) {
+            return;
+          }
           locationStatus.textContent =
             "Location unavailable or permission denied. Error: " +
             error.message;
@@ -159,6 +119,107 @@ static const char LOCATION_PAGE[] PROGMEM = R"rawliteral(
           maximumAge: 0
         }
       );
+    }
+
+    async function queueLocationUpdate(position) {
+      if (!locationSharingActive) {
+        return;
+      }
+
+      const fixTimestamp = Math.floor(position.timestamp);
+      if (fixTimestamp <= lastQueuedFixTimestamp) {
+        return;
+      }
+      lastQueuedFixTimestamp = fixTimestamp;
+
+      if (locationRequestInFlight) {
+        // Keep only the newest fix while the current HTTPS request completes.
+        pendingLocationPosition = position;
+        return;
+      }
+
+      locationRequestInFlight = true;
+      let nextPosition = position;
+      try {
+        while (nextPosition !== null && locationSharingActive) {
+          pendingLocationPosition = null;
+          await sendLocationUpdate(nextPosition);
+          nextPosition = pendingLocationPosition;
+        }
+      } finally {
+        locationRequestInFlight = false;
+      }
+    }
+
+    async function sendLocationUpdate(position) {
+      const locationStatus = document.getElementById("locationStatus");
+      const latitude = position.coords.latitude;
+      const longitude = position.coords.longitude;
+      const accuracy = position.coords.accuracy;
+      const speed = position.coords.speed;
+      const heading = position.coords.heading;
+
+      locationStatus.textContent = "Sending location to vehicle node...";
+
+      const body = new URLSearchParams({
+        latitude: latitude,
+        longitude: longitude,
+        accuracy: accuracy,
+        speed: Number.isFinite(speed) ? speed : "null",
+        heading: Number.isFinite(heading) ? heading : "null",
+        fixTimestamp: String(Math.floor(position.timestamp))
+      });
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(function() {
+        controller.abort();
+      }, 10000);
+
+      try {
+        const response = await fetch("/location", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded"
+          },
+          body: body,
+          signal: controller.signal
+        });
+        await response.text();
+
+        if (!locationSharingActive) {
+          return;
+        }
+
+        if (response.ok) {
+          const motionMessage =
+            "Speed: " + (Number.isFinite(speed)
+              ? (speed * 3.6).toFixed(2) + " km/h"
+              : "unavailable") +
+            "; heading: " + (Number.isFinite(heading)
+              ? heading.toFixed(1) + " degrees"
+              : "unavailable") + ".";
+          const accuracyMessage =
+            "Reported accuracy: " + accuracy.toFixed(1) + " m.";
+          locationStatus.textContent = accuracy <= 1
+            ? "Location update received. " + motionMessage + " " +
+              accuracyMessage + " Reported estimate is within the 1 m target."
+            : "Location update received. " + motionMessage + " " +
+              accuracyMessage +
+              " Best available fix; above the 1 m target.";
+        } else {
+          locationStatus.textContent =
+            "The vehicle node could not receive the location.";
+        }
+      } catch (error) {
+        if (locationSharingActive) {
+          locationStatus.textContent =
+            error.name === "AbortError"
+              ? "Location request timed out; waiting for the next GPS update."
+              : "Could not communicate with the vehicle node.";
+        }
+      } finally {
+        clearTimeout(timeoutId);
+      }
     }
 
     // The script is placed at the end of the page, so the status elements exist.

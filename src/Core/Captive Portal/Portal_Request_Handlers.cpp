@@ -59,14 +59,12 @@ void HandleLocation()
     if (!server.hasArg("latitude") ||
         !server.hasArg("longitude") ||
         !server.hasArg("accuracy") ||
-        !server.hasArg("speed") ||
-        !server.hasArg("heading") ||
         !server.hasArg("fixTimestamp"))
     {
         server.send(
             400,
             "text/plain",
-            "Missing location, motion, accuracy, or fix timestamp field"
+            "Missing location, accuracy, or fix timestamp field"
         );
         return;
     }
@@ -75,8 +73,8 @@ void HandleLocation()
         server.arg("latitude"),
         server.arg("longitude"),
         server.arg("accuracy"),
-        server.arg("speed"),
-        server.arg("heading"),
+        server.hasArg("speed") ? server.arg("speed") : String(),
+        server.hasArg("heading") ? server.arg("heading") : String(),
         server.arg("fixTimestamp")
     );
 

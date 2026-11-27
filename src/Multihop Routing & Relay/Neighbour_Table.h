@@ -15,9 +15,10 @@ struct NeighbourEntry{
 
     int32_t latitude;        // Degrees multiplied by 10^7
     int32_t longitude;       // Degrees multiplied by 10^7
-    uint16_t heading;        // Degrees (0-359), or BEACON_HEADING_UNAVAILABLE
+    uint16_t heading;        // Degrees (0-359), or GPS_HEADING_UNAVAILABLE
     uint16_t speed;          // Speed in cm/s
-    uint32_t timestamp;      // Sender's Unix time in seconds; 0 means unsynchronized
+    uint32_t timestamp;      // Original GPS measurement time, or unavailable sentinel
+    uint32_t lastGpsMeasurementTimestamp; // Ordering guard retained after GPS expiry
 
     float displacement;      // Distance from this node in metres
 

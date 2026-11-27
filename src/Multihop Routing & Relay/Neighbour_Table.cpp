@@ -9,6 +9,113 @@ static uint8_t neighbourCount = 0;
 // Track whether a table slot is occupied.
 static bool occupied[MAX_NEIGHBOURS] = {false};
 
+namespace
+{
+    bool HasPosition(int32_t latitude, int32_t longitude)
+    {
+        return latitude != GPS_LATITUDE_UNAVAILABLE &&
+               longitude != GPS_LONGITUDE_UNAVAILABLE;
+    }
+
+    void InvalidateNeighbourGPS(NeighbourEntry &entry)
+    {
+        entry.latitude = GPS_LATITUDE_UNAVAILABLE;
+        entry.longitude = GPS_LONGITUDE_UNAVAILABLE;
+        entry.speed = GPS_SPEED_UNAVAILABLE;
+        entry.heading = GPS_HEADING_UNAVAILABLE;
+        entry.timestamp = GPS_TIMESTAMP_UNAVAILABLE;
+        entry.displacement = NAN;
+    }
+
+    void UpdateNeighbourGPS(
+        NeighbourEntry &entry,
+        uint32_t timestamp,
+        int32_t latitude,
+        int32_t longitude,
+        uint16_t heading,
+        uint16_t speed,
+        int32_t currentLatitude,
+        int32_t currentLongitude)
+    {
+        if (timestamp == GPS_TIMESTAMP_UNAVAILABLE || timestamp == 0)
+        {
+            InvalidateNeighbourGPS(entry);
+            return;
+        }
+
+        const bool newerTimestamp =
+            entry.lastGpsMeasurementTimestamp == GPS_TIMESTAMP_UNAVAILABLE ||
+            timestamp > entry.lastGpsMeasurementTimestamp;
+        const bool sameTimestamp =
+            timestamp == entry.lastGpsMeasurementTimestamp;
+
+        if (newerTimestamp)
+        {
+            entry.lastGpsMeasurementTimestamp = timestamp;
+            entry.timestamp = timestamp;
+            if (latitude == GPS_LATITUDE_UNAVAILABLE ||
+                longitude == GPS_LONGITUDE_UNAVAILABLE)
+            {
+                entry.latitude = GPS_LATITUDE_UNAVAILABLE;
+                entry.longitude = GPS_LONGITUDE_UNAVAILABLE;
+            }
+            else
+            {
+                entry.latitude = latitude;
+                entry.longitude = longitude;
+            }
+            entry.heading = heading;
+            entry.speed = speed;
+        }
+        else if (sameTimestamp)
+        {
+            // Repeated beacons do not refresh a GPS measurement. They may,
+            // however, report that an individual sender field has expired.
+            if (latitude == GPS_LATITUDE_UNAVAILABLE ||
+                longitude == GPS_LONGITUDE_UNAVAILABLE)
+            {
+                entry.latitude = GPS_LATITUDE_UNAVAILABLE;
+                entry.longitude = GPS_LONGITUDE_UNAVAILABLE;
+            }
+            if (heading == GPS_HEADING_UNAVAILABLE)
+            {
+                entry.heading = GPS_HEADING_UNAVAILABLE;
+            }
+            if (speed == GPS_SPEED_UNAVAILABLE)
+            {
+                entry.speed = GPS_SPEED_UNAVAILABLE;
+            }
+        }
+        else
+        {
+            return;
+        }
+
+        if (!HasPosition(entry.latitude, entry.longitude) ||
+            !HasPosition(currentLatitude, currentLongitude))
+        {
+            entry.displacement = NAN;
+        }
+        else
+        {
+            entry.displacement = calculateDisplacement(
+                currentLatitude,
+                currentLongitude,
+                entry.latitude,
+                entry.longitude
+            );
+        }
+
+        if (entry.latitude == GPS_LATITUDE_UNAVAILABLE &&
+            entry.longitude == GPS_LONGITUDE_UNAVAILABLE &&
+            entry.speed == GPS_SPEED_UNAVAILABLE &&
+            entry.heading == GPS_HEADING_UNAVAILABLE)
+        {
+            entry.timestamp = GPS_TIMESTAMP_UNAVAILABLE;
+        }
+    }
+}
+
 // --------------------------------------------------
 // Initialise the table
 // --------------------------------------------------
@@ -51,6 +158,14 @@ float calculateDisplacement(
     int32_t latitude2,
     int32_t longitude2)
 {
+    if (latitude1 == GPS_LATITUDE_UNAVAILABLE ||
+        longitude1 == GPS_LONGITUDE_UNAVAILABLE ||
+        latitude2 == GPS_LATITUDE_UNAVAILABLE ||
+        longitude2 == GPS_LONGITUDE_UNAVAILABLE)
+    {
+        return NAN;
+    }
+
     constexpr int32_t MAX_LATITUDE = 900000000;
     constexpr int32_t MAX_LONGITUDE = 1800000000;
     if (latitude1 < -MAX_LATITUDE || latitude1 > MAX_LATITUDE ||
@@ -142,6 +257,8 @@ bool addOrUpdateNeighbour(
 
         memset(&entry, 0, sizeof(entry));
         memcpy(entry.nodeID, nodeID, 6);
+        InvalidateNeighbourGPS(entry);
+        entry.lastGpsMeasurementTimestamp = GPS_TIMESTAMP_UNAVAILABLE;
 
         entry.lastSequence = sequence;
         entry.packetsReceived = 1;
@@ -196,19 +313,15 @@ bool addOrUpdateNeighbour(
     entry.RSSI = rssi;
     entry.SNR = snr;
 
-    entry.latitude = latitude;
-    entry.longitude = longitude;
-    entry.timestamp = timestamp;
-
-    entry.heading = heading;
-    entry.speed = speed;
-
-    entry.displacement = calculateDisplacement(
-        currentLatitude,
-        currentLongitude,
+    UpdateNeighbourGPS(
+        entry,
+        timestamp,
         latitude,
-        longitude
-    );
+        longitude,
+        heading,
+        speed,
+        currentLatitude,
+        currentLongitude);
 
     return true;
 }
@@ -225,12 +338,22 @@ void updateAllDisplacements(
         if (!occupied[i])
             continue;
 
-        neighbourTable[i].displacement = calculateDisplacement(
-            currentLatitude,
-            currentLongitude,
-            neighbourTable[i].latitude,
-            neighbourTable[i].longitude
-        );
+        if (!HasPosition(
+                neighbourTable[i].latitude,
+                neighbourTable[i].longitude) ||
+            !HasPosition(currentLatitude, currentLongitude))
+        {
+            neighbourTable[i].displacement = NAN;
+        }
+        else
+        {
+            neighbourTable[i].displacement = calculateDisplacement(
+                currentLatitude,
+                currentLongitude,
+                neighbourTable[i].latitude,
+                neighbourTable[i].longitude
+            );
+        }
     }
 }
 
@@ -298,13 +421,19 @@ void printNeighbourTable()
         Serial.printf("RSSI: %d dBm\n", entry.RSSI);
         Serial.printf("SNR: %.2f dB\n", entry.SNR);
 
-        Serial.printf("Latitude: %.7f\n",
-            entry.latitude / 10000000.0);
+        if (HasPosition(entry.latitude, entry.longitude))
+        {
+            Serial.printf("Latitude: %.7f\n",
+                entry.latitude / 10000000.0);
+            Serial.printf("Longitude: %.7f\n",
+                entry.longitude / 10000000.0);
+        }
+        else
+        {
+            Serial.println("Position: unavailable");
+        }
 
-        Serial.printf("Longitude: %.7f\n",
-            entry.longitude / 10000000.0);
-
-        if (entry.heading == BEACON_HEADING_UNAVAILABLE)
+        if (entry.heading == GPS_HEADING_UNAVAILABLE)
         {
             Serial.println("Heading: unavailable");
         }
@@ -314,12 +443,14 @@ void printNeighbourTable()
                 static_cast<unsigned int>(entry.heading));
         }
 
-        Serial.printf("Speed: %.2f m/s\n",
-            entry.speed / 100.0f);
+        if (entry.speed == GPS_SPEED_UNAVAILABLE)
+            Serial.println("Speed: unavailable");
+        else
+            Serial.printf("Speed: %.2f m/s\n", entry.speed / 100.0f);
 
-        if (entry.timestamp == 0)
+        if (entry.timestamp == GPS_TIMESTAMP_UNAVAILABLE)
         {
-            Serial.println("Beacon timestamp: not synchronized (0)");
+            Serial.println("GPS timestamp: unavailable");
         }
         else
         {

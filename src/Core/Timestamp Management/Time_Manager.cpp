@@ -132,6 +132,38 @@ uint32_t Time_GetCurrentTimestamp()
     return static_cast<uint32_t>(currentTimestampSeconds);
 }
 
+bool Time_GetCurrentTimestampMilliseconds(uint64_t &timestampMilliseconds)
+{
+    if (!clockSynchronized)
+    {
+        return false;
+    }
+
+    // Use the phone-synchronized accumulator rather than gettimeofday() so
+    // GPS age checks and beacon timestamps share the same monotonic time base.
+    const uint32_t nowMillis = millis();
+    const uint32_t elapsedMilliseconds =
+        nowMillis - lastTimestampUpdateMillis;
+    const uint64_t accumulatedMilliseconds =
+        static_cast<uint64_t>(remainingTimestampMilliseconds) +
+        elapsedMilliseconds;
+    currentTimestampSeconds += accumulatedMilliseconds / 1000ULL;
+    remainingTimestampMilliseconds =
+        static_cast<uint16_t>(accumulatedMilliseconds % 1000ULL);
+    lastTimestampUpdateMillis = nowMillis;
+
+    if (currentTimestampSeconds < MIN_UNIX_TIMESTAMP_SECONDS ||
+        currentTimestampSeconds > UINT32_MAX)
+    {
+        return false;
+    }
+
+    timestampMilliseconds =
+        currentTimestampSeconds * 1000ULL +
+        remainingTimestampMilliseconds;
+    return true;
+}
+
 bool Time_IsSynchronized()
 {
     return clockSynchronized;

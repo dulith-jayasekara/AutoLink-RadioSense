@@ -61,29 +61,35 @@ void loop() {
     // Process phone requests before generating a beacon so a newly received
     // location is available to the next scheduled transmission.
     CaptivePortal_HandleClient();
+    GPS_UpdateFreshness();
 
     // Expire entries even when no new beacons arrive.
     removeExpiredNeighbours();
 
-    GPSMotion phoneMotion = {};
-    const bool hasPhoneLocation =
-        GPS_GetVehicleMotion(phoneMotion);
-
-    // Keep the temporary speed as a fallback until the phone provides GPS speed.
-    const uint16_t currentSpeed =
-        hasPhoneLocation && phoneMotion.speedAvailable
-        ? static_cast<uint16_t>(
-            phoneMotion.speedMetersPerSecond * 100.0 + 0.5)
-        : 1667;
-    const bool speedAvailable = true;
-    const bool usingTemporarySpeed =
-        !hasPhoneLocation || !phoneMotion.speedAvailable;
+    GPSMeasurementSnapshot localSnapshot = {};
+    GPS_GetSnapshot(localSnapshot);
+    uint16_t currentSpeed = GPS_SPEED_UNAVAILABLE;
+    bool speedAvailable = localSnapshot.speedAvailable;
+    if (speedAvailable)
+    {
+        const double encodedSpeed =
+            localSnapshot.speedMetersPerSecond * 100.0;
+        if (isfinite(encodedSpeed) &&
+            encodedSpeed >= 0.0 &&
+            encodedSpeed < static_cast<double>(GPS_SPEED_UNAVAILABLE))
+        {
+            currentSpeed = static_cast<uint16_t>(encodedSpeed + 0.5);
+        }
+        else
+        {
+            speedAvailable = false;
+        }
+    }
 
     // Manage adaptive beacon transmission.
     handleBeaconTransmission(
         currentSpeed,
-        speedAvailable,
-        usingTemporarySpeed);
+        speedAvailable);
 
     BeaconPacket incomingBeacon = {};
     BeaconReceptionInfo receptionInfo = {};
@@ -96,14 +102,12 @@ void loop() {
         const bool hasLocalLocation =
             GPS_GetLocation(localLatitude, localLongitude);
 
-        // INT32_MIN is outside the valid coordinate ranges and causes the
-        // neighbour module to report displacement as unavailable (NaN).
         const int32_t localLatitudeScaled = hasLocalLocation
             ? static_cast<int32_t>(localLatitude * 10000000.0)
-            : INT32_MIN;
+            : GPS_LATITUDE_UNAVAILABLE;
         const int32_t localLongitudeScaled = hasLocalLocation
             ? static_cast<int32_t>(localLongitude * 10000000.0)
-            : INT32_MIN;
+            : GPS_LONGITUDE_UNAVAILABLE;
 
         if (addOrUpdateNeighbour(
                 incomingBeacon.nodeID,

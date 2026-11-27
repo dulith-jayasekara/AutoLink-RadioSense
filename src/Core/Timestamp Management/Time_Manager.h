@@ -31,6 +31,9 @@ bool Time_Synchronization(uint64_t timestampMilliseconds);
 // whole seconds, or zero while unsynchronized / outside the packet's range.
 uint32_t Time_GetCurrentTimestamp();
 
+// Read the synchronized system clock in Unix milliseconds.
+bool Time_GetCurrentTimestampMilliseconds(uint64_t &timestampMilliseconds);
+
 // Report whether this boot has received and accepted a phone timestamp.
 bool Time_IsSynchronized();
 

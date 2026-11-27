@@ -13,7 +13,6 @@
 constexpr uint8_t BEACON_PACKET_TYPE = 0x01;
 constexpr uint8_t BEACON_MAC_SIZE = 6;
 constexpr uint8_t BEACON_PACKET_SIZE = 25;
-constexpr uint16_t BEACON_HEADING_UNAVAILABLE = 0xFFFF;
 
 
 // ---------------------------------------------------------
@@ -47,7 +46,7 @@ struct BeaconPacket {
     int32_t latitude;
     int32_t longitude;
     uint16_t speed;       // Centimetres per second
-    uint16_t heading;     // Degrees (0-359), or BEACON_HEADING_UNAVAILABLE
+    uint16_t heading;     // Degrees (0-359), or GPS_HEADING_UNAVAILABLE
     uint32_t timestamp;   // Unix time in seconds
 };
 
@@ -85,8 +84,7 @@ uint32_t calculateBeaconInterval(
 // Manage periodic adaptive beacon transmission.
 void handleBeaconTransmission(
     uint16_t speed,
-    bool speedAvailable,
-    bool usingTemporarySpeed
+    bool speedAvailable
 );
 
 #endif
